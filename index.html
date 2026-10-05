@@ -1,0 +1,1212 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BOM Excel sang PDF</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#17283F;
+    --ink-2:#4B5B71;
+    --line:#CBD3DE;
+    --bg:#EDF0F4;
+    --panel:#FFFFFF;
+    --red:#D3151D;
+    --ok:#1B7A4B;
+    --warn:#B4530A;
+    --focus:#2563EB;
+    --radius:6px;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0;background:var(--bg);color:var(--ink);
+    font-family:"Be Vietnam Pro",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+    font-size:15px;line-height:1.5;
+  }
+  .wrap{max-width:1060px;margin:0 auto;padding:36px 20px 72px}
+  h1{font-size:28px;line-height:1.2;font-weight:700;letter-spacing:-.01em;margin:0 0 6px}
+  .lede{margin:0 0 24px;color:var(--ink-2);max-width:62ch}
+
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:20px}
+  .panel + .panel{margin-top:16px}
+
+  /* Name preview: mirrors the red rule / navy example used by the team */
+  .namebox{text-align:center;padding:22px 20px 26px}
+  .rule{margin:0;color:var(--red);font-weight:700;font-size:clamp(11px,1.7vw,14px);letter-spacing:.01em}
+  .sample{
+    display:block;width:fit-content;max-width:100%;margin:14px auto 0;
+    border:2px solid var(--red);padding:12px 20px;
+    color:var(--ink);font-weight:600;font-size:clamp(14px,2.3vw,19px);
+    overflow-wrap:anywhere;
+  }
+  .sample.is-empty{color:#8A97A8;font-weight:500}
+  .more{margin:10px 0 0;color:var(--ink-2);font-size:13px}
+
+  .settings{display:grid;grid-template-columns:minmax(120px,170px) 1fr minmax(210px,280px);gap:18px 24px;align-items:start}
+  @media (max-width:820px){.settings{grid-template-columns:1fr}}
+  .field > .lbl{display:block;font-weight:600;font-size:13px;margin-bottom:6px}
+  .field .hint{font-weight:400;color:var(--ink-2)}
+  input[type=text],input[type=date],select{
+    width:100%;height:42px;padding:0 12px;border:1px solid var(--line);border-radius:var(--radius);
+    background:#fff;color:var(--ink);font:inherit;
+  }
+  input[type=text]{text-transform:uppercase}
+  input::placeholder{color:#97A3B3;text-transform:none}
+  :is(input,select,button,.drop):focus-visible{outline:3px solid var(--focus);outline-offset:1px}
+  .drop:focus-within{outline:3px solid var(--focus);outline-offset:1px}
+
+  .seg{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+  .seg input{position:absolute;opacity:0;pointer-events:none}
+  .seg label{
+    display:flex;align-items:center;justify-content:center;height:40px;cursor:pointer;
+    font-weight:600;border-left:1px solid var(--line);user-select:none;background:#fff;
+  }
+  .seg label:first-of-type{border-left:0}
+  .seg input:checked + label{background:var(--ink);color:#fff}
+  .seg input:focus-visible + label{outline:3px solid var(--focus);outline-offset:-3px}
+
+  .daterow{display:flex;gap:8px}
+  .btn{
+    height:42px;padding:0 16px;border-radius:var(--radius);border:1px solid var(--line);background:#fff;color:var(--ink);
+    font:inherit;font-weight:600;cursor:pointer;white-space:nowrap;
+  }
+  .btn:hover:not(:disabled){border-color:var(--ink)}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn.primary{background:var(--ink);border-color:var(--ink);color:#fff}
+  .btn.primary:hover:not(:disabled){background:#0F1C2E}
+  .btn.small{height:34px;padding:0 12px;font-size:13px}
+
+  .alert{margin:14px 0 0;padding:10px 12px;border-radius:var(--radius);background:#FFF3E6;color:var(--warn);font-size:13.5px;font-weight:500}
+  .alert[hidden]{display:none}
+
+  .drop{
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;text-align:center;
+    min-height:150px;padding:24px;border:2px dashed #9AA8BA;border-radius:var(--radius);background:#fff;cursor:pointer;
+  }
+  .drop.over{border-color:var(--ink);background:#F3F6FA}
+  .drop strong{font-size:16px}
+  .drop span{color:var(--ink-2);font-size:13.5px}
+  .drop input{position:absolute;width:1px;height:1px;opacity:0}
+
+  .files{list-style:none;margin:0;padding:0}
+  .files:empty{display:none}
+  .files li{
+    display:grid;grid-template-columns:minmax(0,1.15fr) 78px minmax(0,1fr) auto;gap:10px 14px;align-items:end;
+    padding:16px 0;border-top:1px solid var(--line);
+  }
+  .files li:first-child{border-top:0}
+  .src{min-width:0}
+  .src .name{display:block;font-weight:600;overflow-wrap:anywhere}
+  .src .meta{display:block;color:var(--ink-2);font-size:12.5px}
+  .src .meta .diff{color:var(--warn);font-weight:600}
+  .files .f > span{display:block;font-size:12px;font-weight:600;margin-bottom:3px;color:var(--ink-2)}
+  .files .f input{height:38px}
+  .out{grid-column:1 / -1;color:var(--ink);font-size:13px;overflow-wrap:anywhere}
+  .out b{font-weight:600}
+  .act{display:flex;gap:8px;align-items:center;justify-content:flex-end}
+  .state{font-size:13px;font-weight:600;color:var(--ink-2);white-space:nowrap}
+  .state.ok{color:var(--ok)}
+  .state.err{color:var(--red)}
+  .rm{width:34px;padding:0;font-size:18px;line-height:1}
+  @media (max-width:760px){
+    .files li{grid-template-columns:70px 1fr}
+    .src{grid-column:1 / -1}
+    .act{grid-column:1 / -1;justify-content:space-between}
+  }
+
+  .bar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-top:4px}
+  .bar .grow{flex:1}
+  .bar label{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600}
+  .bar select{width:auto;height:42px}
+  .note{margin:18px 0 0;color:var(--ink-2);font-size:13px;max-width:78ch}
+  .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+  @media (prefers-reduced-motion:no-preference){
+    .drop{transition:background-color .15s,border-color .15s}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Chuyển BOM Excel sang PDF</h1>
+  <p class="lede">Thêm nhiều file Excel một lúc. Mỗi file được gom tất cả sheet thành 1 PDF và đặt tên theo rule của team.</p>
+
+  <section class="panel namebox" aria-label="Tên file PDF">
+    <p class="rule">SEASON STAGE BOM – GENDER MODEL NAME – DATE.MONTH.YEAR (CAPITAL LETTER ONLY)</p>
+    <span class="sample is-empty" id="sample">FW27 FLC BOM – W MODEL NAME</span>
+    <p class="more" id="sampleMore" hidden></p>
+  </section>
+
+  <section class="panel" aria-label="Thiết lập tên file">
+    <div class="settings">
+      <div class="field">
+        <label class="lbl" for="season">Season</label>
+        <input type="text" id="season" list="seasons" maxlength="4" placeholder="FW27" autocomplete="off" spellcheck="false">
+        <datalist id="seasons"></datalist>
+      </div>
+      <div class="field">
+        <span class="lbl" id="stageLbl">Stage</span>
+        <div class="seg" role="radiogroup" aria-labelledby="stageLbl" id="stage"></div>
+      </div>
+      <div class="field">
+        <label class="lbl" for="date">Date <span class="hint">(để trống nếu file không có ngày)</span></label>
+        <div class="daterow">
+          <input type="date" id="date">
+          <button class="btn" type="button" id="today">Hôm nay</button>
+          <button class="btn" type="button" id="clearDate">Xóa</button>
+        </div>
+      </div>
+    </div>
+    <p class="alert" id="alert" role="status" hidden></p>
+  </section>
+
+  <section class="panel" aria-label="File Excel">
+    <label class="drop" id="drop">
+      <input type="file" id="picker" accept=".xlsx,.xlsm" multiple>
+      <strong>Kéo thả file Excel vào đây, hoặc bấm để chọn</strong>
+      <span>Chọn được nhiều file một lúc (.xlsx, .xlsm). File được xử lý ngay trên máy, không upload đi đâu.</span>
+    </label>
+    <ul class="files" id="files"></ul>
+    <div class="bar" id="bar" hidden>
+      <button class="btn primary" type="button" id="convert">Chuyển sang PDF</button>
+      <button class="btn" type="button" id="zip" disabled>Tải tất cả (.zip)</button>
+      <button class="btn" type="button" id="clear">Xóa danh sách</button>
+      <span class="grow"></span>
+      <label>Chất lượng
+        <select id="quality">
+          <option value="2">Chuẩn</option>
+          <option value="3">Cao (file nặng hơn)</option>
+        </select>
+      </label>
+    </div>
+  </section>
+
+  <p class="note">PDF được vẽ lại từ nội dung Excel theo vùng in, khổ giấy và tỉ lệ fit-to-page của từng sheet. Chữ trong PDF là ảnh nên không bôi đen/copy được. Sheet đang ẩn sẽ bị bỏ qua.</p>
+</div>
+
+<script>
+/* ============================================================
+   1. Helpers thuần (không đụng DOM) — có test riêng
+   ============================================================ */
+// <pure>
+const STAGES = ['LR2','FLC','SMS','CFM'];
+const THEME_DEFAULT = ['FFFFFF','000000','E7E6E6','44546A','4472C4','ED7D31','A5A5A5','FFC000','5B9BD5','70AD47'];
+const INDEXED = ['000000','FFFFFF','FF0000','00FF00','0000FF','FFFF00','FF00FF','00FFFF','000000','FFFFFF','FF0000','00FF00','0000FF','FFFF00','FF00FF','00FFFF','800000','008000','000080','808000','800080','008080','C0C0C0','808080','9999FF','993366','FFFFCC','CCFFFF','660066','FF8080','0066CC','CCCCFF','000080','FF00FF','FFFF00','00FFFF','800080','800000','008080','0000FF','00CCFF','CCFFFF','CCFFCC','FFFF99','99CCFF','FF99CC','CC99FF','FFCC99','3366FF','33CCCC','99CC00','FFCC00','FF9900','FF6600','666699','969696','003366','339966','003300','333300','993300','993366','333399','333333'];
+const PAPER = { 1:[612,792], 3:[792,1224], 5:[612,1008], 7:[522,756], 8:[841.89,1190.55], 9:[595.28,841.89], 11:[419.53,595.28], 66:[1190.55,1683.78] };
+const EMU_PT = 12700;
+
+function escapeRe(s){ return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'); }
+
+/* ---------- Tên file ---------- */
+function sanitizeName(s){
+  return s.replace(/[\\\/:*?"<>|]/g,' ').replace(/[\u0000-\u001f]/g,'').replace(/\s+/g,' ').trim();
+}
+function fmtDateDMY(iso){
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
+  return m ? `${+m[3]}.${+m[2]}.${m[1]}` : '';
+}
+function buildPdfName(season, stage, gender, model, iso){
+  const head = [season, stage, 'BOM'].map(s => (s||'').trim()).filter(Boolean).join(' ');
+  const mid  = [gender, model].map(s => (s||'').trim()).filter(Boolean).join(' ');
+  let n = head;
+  if (mid) n += ' – ' + mid;
+  const d = fmtDateDMY(iso);
+  if (d) n += ' - ' + d;
+  return sanitizeName(n.toUpperCase());
+}
+function cleanModel(raw, gender){
+  let m = String(raw||'').replace(/\([^)]*\)/g,' ').replace(/\s+/g,' ').trim();
+  if (gender){
+    m = m.replace(new RegExp('(^|\\s)' + escapeRe(gender) + '$','i'),'').trim();
+  }
+  return m.toUpperCase();
+}
+function normGender(raw){
+  const g = String(raw||'').trim();
+  if (!g) return '';
+  const l = g.toLowerCase();
+  if (/^wom/.test(l)) return 'W';
+  if (/^men|^man$/.test(l)) return 'M';
+  return g.toUpperCase().slice(0,6);
+}
+function metaFromFilename(fileName){
+  const base = fileName.replace(/\.[^.]+$/,'');
+  const toks = base.split(/[_\s]+/).filter(Boolean);
+  const si = toks.findIndex(t => /^(SS|FW|SP|SU|FA|HO)\d{2}$/i.test(t));
+  const season = si >= 0 ? toks[si].toUpperCase() : '';
+  const before = (si >= 0 ? toks.slice(0, si) : toks).filter(t => !/^\d|^RK-|^\(/i.test(t));
+  let gender = '';
+  if (before.length > 1 && /^[MWKYB]$/i.test(before[before.length-1])) gender = before.pop().toUpperCase();
+  return { season, gender, model: before.join(' ').toUpperCase() };
+}
+
+/* ---------- Màu ---------- */
+function rgb2hls(r,g,b){
+  r/=255; g/=255; b/=255;
+  const mx=Math.max(r,g,b), mn=Math.min(r,g,b), l=(mx+mn)/2;
+  let h=0, s=0;
+  if (mx!==mn){
+    const d=mx-mn;
+    s = l>0.5 ? d/(2-mx-mn) : d/(mx+mn);
+    if (mx===r) h=(g-b)/d+(g<b?6:0);
+    else if (mx===g) h=(b-r)/d+2;
+    else h=(r-g)/d+4;
+    h/=6;
+  }
+  return [h,l,s];
+}
+function hls2rgb(h,l,s){
+  if (s===0){ const v=Math.round(l*255); return [v,v,v]; }
+  const q = l<0.5 ? l*(1+s) : l+s-l*s, p = 2*l-q;
+  const f = t => { if(t<0)t+=1; if(t>1)t-=1; if(t<1/6)return p+(q-p)*6*t; if(t<1/2)return q; if(t<2/3)return p+(q-p)*(2/3-t)*6; return p; };
+  return [f(h+1/3),f(h),f(h-1/3)].map(v=>Math.round(v*255));
+}
+function applyTint(hex, tint){
+  const r=parseInt(hex.slice(0,2),16), g=parseInt(hex.slice(2,4),16), b=parseInt(hex.slice(4,6),16);
+  let [h,l,s] = rgb2hls(r,g,b);
+  l = tint<0 ? l*(1+tint) : l*(1-tint)+tint;
+  return hls2rgb(h,Math.min(1,Math.max(0,l)),s).map(v=>v.toString(16).padStart(2,'0')).join('').toUpperCase();
+}
+function resolveColor(c, theme, fallback){
+  if (!c) return fallback;
+  let hex = null;
+  if (c.argb) hex = String(c.argb).slice(-6);
+  else if (c.theme !== undefined) hex = (theme || THEME_DEFAULT)[c.theme];
+  else if (c.indexed !== undefined) hex = INDEXED[c.indexed];
+  if (!hex || !/^[0-9a-f]{6}$/i.test(hex)) return fallback;
+  if (c.tint) hex = applyTint(hex, c.tint);
+  return '#' + hex.toUpperCase();
+}
+function parseTheme(xml){
+  if (!xml || typeof xml !== 'string') return null;
+  const get = tag => {
+    const m = new RegExp('<a:'+tag+'>([\\s\\S]*?)</a:'+tag+'>').exec(xml);
+    if (!m) return null;
+    const c = /(?:srgbClr val|lastClr)="([0-9A-Fa-f]{6})"/.exec(m[1]);
+    return c ? c[1].toUpperCase() : null;
+  };
+  const order = ['lt1','dk1','lt2','dk2','accent1','accent2','accent3','accent4','accent5','accent6'];
+  const out = order.map(get);
+  return out.every(Boolean) ? out : null;
+}
+
+/* ---------- Định dạng số / ngày ---------- */
+function general(n){
+  if (Number.isInteger(n)) return String(n);
+  return String(parseFloat(n.toPrecision(10)));
+}
+function stripFmtNoise(fmt){
+  return fmt.replace(/"[^"]*"/g,'').replace(/\[[^\]]*\]/g,'').replace(/\\./g,'').replace(/_./g,'').replace(/\*./g,'');
+}
+function isDateFmt(fmt){
+  if (!fmt || /^general$/i.test(fmt)) return false;
+  return /[dmyhs]/i.test(stripFmtNoise(fmt));
+}
+function splitSections(fmt){
+  const out=[]; let cur='', q=false;
+  for (const ch of fmt){
+    if (ch==='"') q=!q;
+    if (ch===';' && !q){ out.push(cur); cur=''; } else cur+=ch;
+  }
+  out.push(cur);
+  return out;
+}
+function applySection(n, sec, minus){
+  sec = sec.replace(/\[\$([^\]\-]*)(?:-[^\]]*)?\]/g,'$1').replace(/\[[^\]]*\]/g,'');
+  let prefix='', suffix='', pat='', percent=false, state=0; // 0 before, 1 in number, 2 after
+  for (let i=0;i<sec.length;i++){
+    const ch=sec[i];
+    let lit=null;
+    if (ch==='"'){ const j=sec.indexOf('"',i+1); lit = sec.slice(i+1, j<0?sec.length:j); i = j<0?sec.length:j; }
+    else if (ch==='\\'){ lit = sec[i+1]||''; i++; }
+    else if (ch==='_'){ lit=' '; i++; }
+    else if (ch==='*'){ i++; continue; }
+    else if (ch==='%'){ percent=true; lit='%'; }
+    else if (/[0#?.,]/.test(ch)){
+      if (state===2) { suffix+=ch; continue; }
+      state=1; pat+=ch; continue;
+    } else lit=ch;
+    if (state===1) state=2;
+    if (state===0) prefix+=lit; else suffix+=lit;
+  }
+  if (!pat) return (minus?'-':'') + prefix + suffix;
+  const dot = pat.indexOf('.');
+  let intPat = dot<0 ? pat : pat.slice(0,dot);
+  const decPat = dot<0 ? '' : pat.slice(dot+1).replace(/,/g,'');
+  const thousands = intPat.includes(',');
+  let scale = 0; while (intPat.endsWith(',')){ scale++; intPat=intPat.slice(0,-1); }
+  intPat = intPat.replace(/,/g,'');
+  let v = n * (percent?100:1) / Math.pow(1000, scale);
+  const s = v.toFixed(decPat.length);
+  let [ip, dp=''] = s.split('.');
+  const minInt = (intPat.match(/0/g)||[]).length;
+  ip = ip.padStart(minInt,'0');
+  if (minInt===0 && ip==='0') ip='';
+  if (thousands) ip = ip.replace(/\B(?=(\d{3})+(?!\d))/g,',');
+  const req = (decPat.match(/0/g)||[]).length;
+  while (dp.length>req && dp.endsWith('0')) dp = dp.slice(0,-1);
+  return (minus?'-':'') + prefix + ip + (dp ? '.'+dp : '') + suffix;
+}
+function fmtNumber(n, fmt){
+  if (!Number.isFinite(n)) return String(n);
+  if (!fmt || /^general$/i.test(fmt)) return general(n);
+  if (isDateFmt(fmt)) return fmtDateObj(new Date(Math.round((n-25569)*86400000)), fmt);
+  if (/E[+-]/i.test(fmt) || /[?#]\s*\/\s*[?#0-9]/.test(fmt) || fmt==='@') return general(n);
+  const secs = splitSections(fmt);
+  if (n<0 && secs.length>1) return applySection(-n, secs[1], false);
+  if (n===0 && secs.length>2) return applySection(0, secs[2], false);
+  return n<0 ? applySection(-n, secs[0], true) : applySection(n, secs[0], false);
+}
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+function fmtDateObj(d, fmt){
+  if (isNaN(d)) return '';
+  const toks = [];
+  const re = /"([^"]*)"|\\(.)|\[[^\]]*\]|yyyy|yy|mmmmm|mmmm|mmm|mm|m|dddd|ddd|dd|d|hh|h|ss|s|AM\/PM|A\/P|./gi;
+  let m;
+  while ((m = re.exec(fmt))){
+    if (m[1] !== undefined) toks.push({lit:m[1]});
+    else if (m[2] !== undefined) toks.push({lit:m[2]});
+    else if (m[0][0]==='[') continue;
+    else toks.push({t:m[0].toLowerCase(), raw:m[0]});
+  }
+  const ampm = toks.some(t => t.t==='am/pm' || t.t==='a/p');
+  const Y=d.getUTCFullYear(), Mo=d.getUTCMonth(), D=d.getUTCDate(), W=d.getUTCDay();
+  const H=d.getUTCHours(), Mi=d.getUTCMinutes(), S=d.getUTCSeconds();
+  const p2 = x => String(x).padStart(2,'0');
+  let out='';
+  toks.forEach((t,i)=>{
+    if (t.lit !== undefined){ out+=t.lit; return; }
+    switch (t.t){
+      case 'yyyy': out+=Y; break;
+      case 'yy': out+=p2(Y%100); break;
+      case 'mmmmm': out+=MONTHS[Mo][0]; break;
+      case 'mmmm': out+=MONTHS[Mo]; break;
+      case 'mmm': out+=MONTHS[Mo].slice(0,3); break;
+      case 'mm': case 'm': {
+        const prev = toks.slice(0,i).reverse().find(x=>x.t);
+        const next = toks.slice(i+1).find(x=>x.t);
+        const isMin = (prev && /^h/.test(prev.t)) || (next && /^s/.test(next.t));
+        const val = isMin ? Mi : Mo+1;
+        out += t.t==='mm' ? p2(val) : val; break;
+      }
+      case 'dddd': out+=DAYS[W]; break;
+      case 'ddd': out+=DAYS[W].slice(0,3); break;
+      case 'dd': out+=p2(D); break;
+      case 'd': out+=D; break;
+      case 'hh': out+=p2(ampm ? (H%12||12) : H); break;
+      case 'h': out+=(ampm ? (H%12||12) : H); break;
+      case 'ss': out+=p2(S); break;
+      case 's': out+=S; break;
+      case 'am/pm': out+=(H<12?'AM':'PM'); break;
+      case 'a/p': out+=(H<12?'A':'P'); break;
+      default: out+=t.raw;
+    }
+  });
+  return out;
+}
+
+/* ---------- Giá trị ô ---------- */
+function unwrapValue(v, depth){
+  depth = depth||0;
+  if (v===null || v===undefined) return '';
+  if (v instanceof Date) return v;
+  if (typeof v === 'object' && depth < 6){
+    if (Array.isArray(v.richText)) return v.richText.map(r=>r.text).join('');
+    if ('result' in v) return unwrapValue(v.result, depth+1);
+    if ('formula' in v || 'sharedFormula' in v) return '';
+    if ('text' in v) return unwrapValue(v.text, depth+1);
+    if ('error' in v) return String(v.error);
+    if ('hyperlink' in v) return String(v.hyperlink);
+    return '';
+  }
+  return v;
+}
+function cellText(cell){
+  const v = unwrapValue(cell.value);
+  const fmt = cell.numFmt;
+  if (v instanceof Date) return fmtDateObj(v, isDateFmt(fmt) ? fmt : 'm/d/yyyy');
+  if (typeof v === 'number') return fmtNumber(v, fmt);
+  if (typeof v === 'boolean') return v ? 'TRUE' : 'FALSE';
+  return String(v);
+}
+
+/* ---------- Bố cục trang ---------- */
+function colLetterToNum(s){ let n=0; for (const ch of s.toUpperCase()) n = n*26 + ch.charCodeAt(0)-64; return n; }
+function parseRange(str){
+  const m = /\$?([A-Za-z]{1,3})\$?(\d+)(?::\$?([A-Za-z]{1,3})\$?(\d+))?/.exec(str||'');
+  if (!m) return null;
+  const c1=colLetterToNum(m[1]), r1=+m[2];
+  const c2=m[3]?colLetterToNum(m[3]):c1, r2=m[4]?+m[4]:r1;
+  return { r1:Math.min(r1,r2), c1:Math.min(c1,c2), r2:Math.max(r1,r2), c2:Math.max(c1,c2) };
+}
+function parseTitleRows(str){
+  const m = /\$?(\d+):\$?(\d+)/.exec(str||'');
+  return m ? { from:+m[1], to:+m[2] } : null;
+}
+function parseHF(str, ctx){
+  const out = { L:'', C:'', R:'' };
+  if (!str) return out;
+  let cur = 'C';
+  for (let i=0;i<str.length;i++){
+    const ch = str[i];
+    if (ch !== '&'){ out[cur]+=ch; continue; }
+    const nx = str[++i];
+    if (nx===undefined) break;
+    if (nx==='L'||nx==='C'||nx==='R') cur = nx;
+    else if (nx==='P') out[cur]+=ctx.page;
+    else if (nx==='N') out[cur]+=ctx.total;
+    else if (nx==='A') out[cur]+=ctx.sheet;
+    else if (nx==='F') out[cur]+=ctx.file;
+    else if (nx==='D') out[cur]+=ctx.date;
+    else if (nx==='T') out[cur]+=ctx.time;
+    else if (nx==='&') out[cur]+='&';
+    else if (nx==='"'){ const j=str.indexOf('"',i+1); i = j<0 ? str.length : j; }
+    else if (/\d/.test(nx)){ while (/\d/.test(str[i+1]||'')) i++; }
+  }
+  return out;
+}
+function wrapLines(measure, text, maxW){
+  const CJK = '\\u2E80-\\u9FFF\\uF900-\\uFAFF\\uFF00-\\uFFEF';
+  const tokRe = new RegExp('['+CJK+']|[^\\s'+CJK+']+\\s*|\\s+','g');
+  const out = [];
+  for (const para of String(text).split(/\r?\n/)){
+    if (para === ''){ out.push(''); continue; }
+    const toks = para.match(tokRe) || [para];
+    let line = '';
+    for (const t of toks){
+      const trial = line + t;
+      if (!line){
+        if (measure(t.trimEnd()) <= maxW) { line = t; continue; }
+        let buf = '';
+        for (const ch of t){
+          if (buf && measure(buf+ch) > maxW){ out.push(buf); buf = ch; } else buf += ch;
+        }
+        line = buf;
+      } else if (measure(trial.trimEnd()) <= maxW){
+        line = trial;
+      } else {
+        out.push(line.trimEnd());
+        line = '';
+        if (/^\s+$/.test(t)) continue;
+        if (measure(t.trimEnd()) <= maxW) { line = t; continue; }
+        let buf = '';
+        for (const ch of t){
+          if (buf && measure(buf+ch) > maxW){ out.push(buf); buf = ch; } else buf += ch;
+        }
+        line = buf;
+      }
+    }
+    out.push(line.trimEnd());
+  }
+  return out;
+}
+// </pure>
+
+/* ============================================================
+   2. Engine vẽ Excel -> canvas -> PDF
+   ============================================================ */
+const FONT_FALLBACK = 'Arial, Helvetica, "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "Be Vietnam Pro", sans-serif';
+const tick = () => new Promise(r => setTimeout(r, 0));
+
+function anchorOf(a){
+  if (!a) return null;
+  if (a.nativeCol !== undefined)
+    return { col:a.nativeCol, colOff:(a.nativeColOff||0)/EMU_PT, row:a.nativeRow, rowOff:(a.nativeRowOff||0)/EMU_PT };
+  if (a.col !== undefined)
+    return { col:Math.floor(a.col), colOff:(a.col%1)*48, row:Math.floor(a.row), rowOff:(a.row%1)*15 };
+  return null;
+}
+
+function planSheet(ws){
+  const ps = ws.pageSetup || {};
+  const props = ws.properties || {};
+  let [pw, ph] = PAPER[ps.paperSize] || PAPER[9];
+  if (ps.orientation === 'landscape') [pw, ph] = [Math.max(pw,ph), Math.min(pw,ph)];
+  else [pw, ph] = [Math.min(pw,ph), Math.max(pw,ph)];
+  const m = ps.margins || {};
+  const ml=(m.left ?? 0.7)*72, mr=(m.right ?? 0.7)*72, mt=(m.top ?? 0.75)*72, mb=(m.bottom ?? 0.75)*72;
+  const availW = pw-ml-mr, availH = ph-mt-mb;
+
+  const lastR = ws.rowCount || 1, lastC = ws.columnCount || 1;
+  const area = parseRange(ps.printArea) || { r1:1, c1:1, r2:lastR, c2:lastC };
+
+  // ảnh (để biết phạm vi cột/dòng cần tính)
+  const rawImgs = [];
+  let imgs = []; try { imgs = (ws.getImages && ws.getImages()) || []; } catch(e) {}
+  for (const im of imgs){
+    const rg = im.range || (im.model && im.model.range) || {};
+    const tl = anchorOf(rg.tl), br = anchorOf(rg.br);
+    if (tl) rawImgs.push({ id:im.imageId, tl, br, ext:rg.ext });
+  }
+  let NC = Math.max(area.c2, lastC), NR = Math.max(area.r2, lastR);
+  for (const im of rawImgs){
+    NC = Math.max(NC, im.tl.col+2, (im.br?im.br.col:0)+2);
+    NR = Math.max(NR, im.tl.row+2, (im.br?im.br.row:0)+2);
+  }
+
+  const dcw = props.defaultColWidth || 8.43;
+  const drh = props.defaultRowHeight || 15;
+  const colW = [0], rowH = [0];
+  for (let c=1;c<=NC;c++){
+    const col = ws.getColumn(c);
+    colW[c] = col.hidden ? 0 : Math.round((col.width || dcw)*7)*0.75;
+  }
+  for (let r=1;r<=NR;r++){
+    const row = ws.getRow(r);
+    rowH[r] = row.hidden ? 0 : (row.height || drh);
+  }
+  const colX = [0, 0], rowY = [0, 0];
+  for (let c=1;c<=NC;c++) colX[c+1] = colX[c] + colW[c];
+  for (let r=1;r<=NR;r++) rowY[r+1] = rowY[r] + rowH[r];
+
+  const W = colX[area.c2+1] - colX[area.c1];
+  const H = rowY[area.r2+1] - rowY[area.r1];
+
+  let s;
+  if (ps.fitToPage){
+    const fw = ps.fitToWidth === undefined ? 1 : ps.fitToWidth;
+    const fh = ps.fitToHeight === undefined ? 1 : ps.fitToHeight;
+    s = Math.min(1, fw>0 ? availW*fw/W : Infinity, fh>0 ? availH*fh/H : Infinity);
+  } else {
+    s = Math.min((ps.scale || 100)/100, availW/W);
+  }
+  if (!isFinite(s) || s <= 0) s = 1;
+  s = Math.max(s, 0.1);
+
+  // phân trang theo dòng
+  const limit = availH / s;
+  const titles = parseTitleRows(ps.printTitlesRow);
+  const titleRows = [];
+  let titleH = 0;
+  if (titles) for (let r=titles.from; r<=titles.to; r++){ titleRows.push(r); titleH += rowH[r]||0; }
+  const pages = [];
+  let cur = [], used = 0;
+  for (let r=area.r1; r<=area.r2; r++){
+    const h = rowH[r];
+    if (cur.length && used + h > limit + 0.01){
+      pages.push(cur);
+      cur = titles && r > titles.to ? titleRows.slice() : [];
+      used = titles && r > titles.to ? titleH : 0;
+    }
+    cur.push(r); used += h;
+  }
+  if (cur.length) pages.push(cur);
+
+  // ảnh -> toạ độ tuyệt đối (pt)
+  const images = [];
+  for (const im of rawImgs){
+    const x = colX[im.tl.col+1] + im.tl.colOff;
+    const row1 = im.tl.row+1;
+    let w, h;
+    if (im.br){
+      w = colX[im.br.col+1] + im.br.colOff - x;
+      h = rowY[im.br.row+1] + im.br.rowOff - (rowY[row1] + im.tl.rowOff);
+    } else if (im.ext){
+      const k = im.ext.width > 4000 ? 1/EMU_PT : 0.75;
+      w = im.ext.width*k; h = im.ext.height*k;
+    } else continue;
+    images.push({ id:im.id, x, row:row1, rowOff:im.tl.rowOff, w, h });
+  }
+
+  // ô gộp
+  const mergeMap = new Map(), slave = new Set(), mergeOf = new Map();
+  const merges = (ws.model && ws.model.merges) || [];
+  for (const str of merges){
+    const rg = parseRange(str); if (!rg) continue;
+    mergeMap.set(rg.r1+','+rg.c1, rg);
+    for (let r=rg.r1;r<=rg.r2;r++) for (let c=rg.c1;c<=rg.c2;c++){
+      mergeOf.set(r+','+c, rg);
+      if (r!==rg.r1 || c!==rg.c1) slave.add(r+','+c);
+    }
+  }
+
+  return { ws, name: ws.name, pw, ph, ml, mr, mt, mb, availW, availH, area, colW, rowH, colX, rowY, s,
+           pages, images, mergeMap, slave, mergeOf,
+           centerH: !!(ps.horizontalCentered), hf: ws.headerFooter || {}, margins: m };
+}
+
+const BORDER_W = { hair:0.4, thin:0.75, dotted:0.75, dashed:0.75, dashDot:0.75, dashDotDot:0.75, slantDashDot:0.75,
+                   mediumDashed:1.5, mediumDashDot:1.5, mediumDashDotDot:1.5, medium:1.5, thick:2.25, double:2.25 };
+const BORDER_DASH = { dotted:[1,1], dashed:[3,2], dashDot:[3,2,1,2], dashDotDot:[3,2,1,2,1,2], mediumDashed:[4,2], hair:[1,1] };
+
+function cellFillColor(cell, theme){
+  const f = cell.fill;
+  if (!f) return null;
+  if (f.type === 'pattern'){
+    if (!f.pattern || f.pattern === 'none') return null;
+    const c = resolveColor(f.fgColor, theme, null);
+    if (!c) return null;
+    return f.pattern === 'solid' ? c : { c, alpha:0.3 };
+  }
+  if (f.type === 'gradient' && f.stops && f.stops.length)
+    return resolveColor(f.stops[0].color, theme, null);
+  return null;
+}
+
+function drawBorder(ctx, edge, x1, y1, x2, y2, theme){
+  if (!edge || !edge.style) return;
+  ctx.save();
+  ctx.strokeStyle = resolveColor(edge.color, theme, '#000000');
+  ctx.lineWidth = BORDER_W[edge.style] || 0.75;
+  ctx.setLineDash(BORDER_DASH[edge.style] || []);
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  ctx.restore();
+}
+
+function drawCellText(ctx, cell, rect, ext, theme, isMerged){
+  const text = cellText(cell);
+  if (text === '') return;
+  const font = cell.font || {};
+  const al = cell.alignment || {};
+  const size = font.size || 11;
+  const color = resolveColor(font.color, theme, '#000000');
+  const v = unwrapValue(cell.value);
+  const isNum = typeof v === 'number' || v instanceof Date;
+  let h = al.horizontal;
+  if (!h || h === 'general') h = (isNum ? 'right' : (typeof v === 'boolean' ? 'center' : 'left'));
+  if (h === 'fill' || h === 'justify' || h === 'distributed') h = 'left';
+  if (h === 'centerContinuous') h = 'center';
+  const vert = al.vertical === 'top' ? 'top' : (al.vertical === 'middle' || al.vertical === 'center') ? 'middle' : 'bottom';
+  const pad = 1.5;
+  const indent = (al.indent || 0) * 8;
+
+  let fs = size;
+  const setFont = px => {
+    ctx.font = `${font.italic?'italic ':''}${font.bold?'bold ':''}${px}px "${font.name||'Calibri'}", ${FONT_FALLBACK}`;
+  };
+  setFont(fs);
+  const innerW = rect.w - 2*pad - indent;
+  if (al.shrinkToFit && !al.wrapText){
+    const w = ctx.measureText(text).width;
+    if (w > innerW && innerW > 0){ fs = Math.max(4, fs*innerW/w); setFont(fs); }
+  }
+
+  let lines, clipRect = rect;
+  if (al.wrapText){
+    lines = wrapLines(t => ctx.measureText(t).width, text, Math.max(innerW, 1));
+  } else {
+    lines = text.split(/\r?\n/);
+    if (h === 'left' && !isNum && !isMerged && ext > 0) clipRect = { x:rect.x, y:rect.y, w:rect.w+ext, h:rect.h };
+  }
+  const lh = fs * 1.22;
+  const blockH = lines.length * lh;
+  let y0;
+  if (vert === 'top') y0 = rect.y + 1;
+  else if (vert === 'middle') y0 = rect.y + (rect.h - blockH)/2;
+  else y0 = rect.y + rect.h - blockH - 1;
+
+  ctx.save();
+  ctx.beginPath(); ctx.rect(clipRect.x, clipRect.y, clipRect.w, clipRect.h); ctx.clip();
+  ctx.fillStyle = color;
+  ctx.textBaseline = 'middle';
+  let x;
+  if (h === 'center'){ ctx.textAlign = 'center'; x = rect.x + rect.w/2; }
+  else if (h === 'right'){ ctx.textAlign = 'right'; x = rect.x + rect.w - pad; }
+  else { ctx.textAlign = 'left'; x = rect.x + pad + indent; }
+  lines.forEach((ln, i) => {
+    const ly = y0 + i*lh + lh/2 + fs*0.04;
+    ctx.fillText(ln, x, ly);
+    if (font.underline || font.strike){
+      const w = ctx.measureText(ln).width;
+      const sx = h==='center' ? x - w/2 : (h==='right' ? x - w : x);
+      ctx.strokeStyle = color; ctx.lineWidth = Math.max(0.5, fs/16);
+      const yy = font.strike ? ly : ly + fs*0.42;
+      ctx.beginPath(); ctx.moveTo(sx, yy); ctx.lineTo(sx+w, yy); ctx.stroke();
+    }
+  });
+  ctx.restore();
+}
+
+function drawPage(canvas, plan, pageIdx, o){
+  const { R, theme, imgCache, fileName, pageNo, total } = o;
+  canvas.width = Math.round(plan.pw * R);
+  canvas.height = Math.round(plan.ph * R);
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(R,0,0,R,0,0);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, plan.pw, plan.ph);
+
+  const rows = plan.pages[pageIdx];
+  const { area, colW, rowH, colX, rowY, s, mergeMap, slave, ws } = plan;
+  const offX = plan.centerH ? Math.max(0, (plan.availW - (colX[area.c2+1]-colX[area.c1])*s)/2) : 0;
+
+  ctx.save();
+  ctx.beginPath(); ctx.rect(plan.ml, plan.mt, plan.availW, plan.availH); ctx.clip();
+  ctx.translate(plan.ml + offX, plan.mt);
+  ctx.scale(s, s);
+
+  const rowTop = new Map();
+  let y = 0;
+  for (const r of rows){ rowTop.set(r, y); y += rowH[r]; }
+
+  // thu thập ô cần vẽ
+  const items = [];
+  for (const r of rows){
+    if (rowH[r] === 0) continue;
+    const row = ws.getRow(r);
+    for (let c=area.c1; c<=area.c2; c++){
+      if (colW[c] === 0) continue;
+      const cell = row.getCell(c);
+      const key = r+','+c;
+      const rect = { x:colX[c]-colX[area.c1], y:rowTop.get(r), w:colW[c], h:rowH[r] };
+      const mg = mergeMap.get(key);
+      const isSlave = slave.has(key);
+      let mrect = null;
+      if (mg){
+        mrect = { x:colX[mg.c1]-colX[area.c1], y:rowTop.get(r),
+                  w:colX[mg.c2+1]-colX[mg.c1], h:rowY[mg.r2+1]-rowY[mg.r1] };
+      }
+      items.push({ r, c, cell, rect, mrect, isSlave, merged: !!mg });
+    }
+  }
+
+  // 1) nền
+  for (const it of items){
+    if (it.isSlave) continue;
+    const f = cellFillColor(it.cell, theme);
+    if (!f) continue;
+    const rc = it.mrect || it.rect;
+    ctx.save();
+    if (typeof f === 'string') ctx.fillStyle = f; else { ctx.fillStyle = f.c; ctx.globalAlpha = f.alpha; }
+    ctx.fillRect(rc.x, rc.y, rc.w, rc.h);
+    ctx.restore();
+  }
+  // 2) viền
+  for (const it of items){
+    const b = it.cell.border;
+    if (!b) continue;
+    const { x, y:yy, w, h } = it.rect;
+    const rg = plan.mergeOf.get(it.r+','+it.c);   // viền nằm bên trong ô gộp thì không vẽ
+    if (!rg || it.r === rg.r1) drawBorder(ctx, b.top,    x,   yy,   x+w, yy,   theme);
+    if (!rg || it.r === rg.r2) drawBorder(ctx, b.bottom, x,   yy+h, x+w, yy+h, theme);
+    if (!rg || it.c === rg.c1) drawBorder(ctx, b.left,   x,   yy,   x,   yy+h, theme);
+    if (!rg || it.c === rg.c2) drawBorder(ctx, b.right,  x+w, yy,   x+w, yy+h, theme);
+  }
+  // 3) chữ
+  for (const it of items){
+    if (it.isSlave) continue;
+    let ext = 0;
+    if (!it.merged){
+      const row = ws.getRow(it.r);
+      for (let cc=it.c+1; cc<=area.c2; cc++){
+        const k = it.r+','+cc;
+        if (slave.has(k) || mergeMap.has(k)) break;
+        const val = unwrapValue(row.getCell(cc).value);
+        if (val !== '' && val !== null && val !== undefined) break;
+        ext += colW[cc];
+      }
+    }
+    drawCellText(ctx, it.cell, it.mrect || it.rect, ext, theme, it.merged);
+  }
+  // 4) ảnh
+  for (const im of plan.images){
+    const bmp = imgCache.get(im.id);
+    const top = rowTop.get(im.row);
+    if (!bmp || top === undefined) continue;
+    ctx.drawImage(bmp, im.x - colX[area.c1], top + im.rowOff, im.w, im.h);
+  }
+  ctx.restore();
+
+  // header / footer (không scale)
+  const now = new Date();
+  const hfCtx = { page:pageNo, total, sheet:plan.name, file:fileName,
+                  date:now.toLocaleDateString(), time:now.toLocaleTimeString() };
+  const drawHF = (str, yy) => {
+    const t = parseHF(str, hfCtx);
+    ctx.font = `9px ${FONT_FALLBACK}`; ctx.fillStyle = '#000'; ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';   if (t.L) ctx.fillText(t.L, plan.ml, yy);
+    ctx.textAlign = 'center'; if (t.C) ctx.fillText(t.C, plan.pw/2, yy);
+    ctx.textAlign = 'right';  if (t.R) ctx.fillText(t.R, plan.pw-plan.mr, yy);
+  };
+  const hf = plan.hf;
+  if (hf.oddFooter) drawHF(hf.oddFooter, plan.ph - (plan.margins.footer ?? 0.3)*72);
+  if (hf.oddHeader) drawHF(hf.oddHeader, (plan.margins.header ?? 0.3)*72);
+}
+
+async function toBitmap(blob){
+  if (window.createImageBitmap){
+    try { return await createImageBitmap(blob); } catch(e) {}
+  }
+  return await new Promise((res, rej) => {
+    const url = URL.createObjectURL(blob), img = new Image();
+    img.onload = () => res(img); img.onerror = rej; img.src = url;
+  });
+}
+async function loadImages(wb){
+  const cache = new Map();
+  for (const ws of wb.worksheets){
+    let imgs = []; try { imgs = (ws.getImages && ws.getImages()) || []; } catch(e) {}
+    for (const im of imgs){
+      const id = im.imageId;
+      if (cache.has(id)) continue;
+      try {
+        const med = wb.getImage(id);
+        if (!med || !med.buffer){ cache.set(id, null); continue; }
+        const ext = String(med.extension||'png').toLowerCase().replace('jpg','jpeg');
+        cache.set(id, await toBitmap(new Blob([med.buffer], { type:'image/'+ext })));
+      } catch(e) { cache.set(id, null); }
+    }
+  }
+  return cache;
+}
+
+function detectMeta(wb, fileName){
+  const meta = { season:'', gender:'', model:'' };
+  const right = (ws, r, c) => {
+    for (let k=1;k<=4;k++){
+      const t = cellText(ws.getCell(r, c+k)).trim();
+      if (t) return t;
+    }
+    return '';
+  };
+  for (const ws of wb.worksheets){
+    if (ws.state && ws.state !== 'visible') continue;
+    const maxR = Math.min(ws.rowCount||0, 20), maxC = Math.min(ws.columnCount||0, 14);
+    for (let r=1;r<=maxR;r++) for (let c=1;c<=maxC;c++){
+      const t = cellText(ws.getCell(r, c)).trim().toLowerCase().replace(/[:：]\s*$/,'');
+      if (t==='season' && !meta.season) meta.season = right(ws,r,c).toUpperCase();
+      else if (t==='gender' && !meta.gender) meta.gender = normGender(right(ws,r,c));
+      else if ((t==='sample name' || t==='model name' || t==='style name') && !meta.model) meta.model = right(ws,r,c);
+    }
+    if (meta.season && meta.gender && meta.model) break;
+  }
+  const fb = metaFromFilename(fileName);
+  meta.season = /^[A-Z]{2}\d{2}$/.test(meta.season) ? meta.season : fb.season;
+  meta.gender = meta.gender || fb.gender;
+  meta.model  = meta.model ? cleanModel(meta.model, meta.gender) : fb.model;
+  return meta;
+}
+
+async function workbookToPdf(wb, o){
+  const { quality, onProgress } = o;
+  const theme = parseTheme(wb._themes && (wb._themes.theme1 || Object.values(wb._themes)[0]));
+  const sheets = wb.worksheets.filter(ws => !ws.state || ws.state === 'visible');
+  if (!sheets.length) throw new Error('File không có sheet nào đang hiển thị.');
+  const plans = sheets.map(planSheet);
+  const total = plans.reduce((a,p) => a + p.pages.length, 0);
+  const imgCache = await loadImages(wb);
+  const { jsPDF } = window.jspdf;
+  let pdf = null, n = 0;
+  const canvas = document.createElement('canvas');
+  for (let i=0;i<plans.length;i++){
+    const plan = plans[i];
+    for (let p=0;p<plan.pages.length;p++){
+      n++;
+      onProgress && onProgress(`Đang vẽ sheet ${i+1}/${plans.length} (trang ${n}/${total})`);
+      await tick();
+      drawPage(canvas, plan, p, { R:quality, theme, imgCache, fileName:o.fileName, pageNo:n, total });
+      const data = canvas.toDataURL('image/jpeg', 0.92);
+      const orient = plan.pw > plan.ph ? 'l' : 'p';
+      const fmt = [Math.min(plan.pw,plan.ph), Math.max(plan.pw,plan.ph)];
+      if (!pdf) pdf = new jsPDF({ orientation:orient, unit:'pt', format:fmt, compress:true });
+      else pdf.addPage(fmt, orient);
+      pdf.addImage(data, 'JPEG', 0, 0, plan.pw, plan.ph, undefined, 'FAST');
+    }
+  }
+  canvas.width = canvas.height = 0;
+  return { blob: pdf.output('blob'), pages: total, sheets: plans.length };
+}
+
+/* ============================================================
+   3. Nạp thư viện (cdnjs, dự phòng jsDelivr)
+   ============================================================ */
+const LIBS = [
+  { name:'ExcelJS', ok:() => window.ExcelJS, urls:[
+      'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js',
+      'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js'] },
+  { name:'jsPDF', ok:() => window.jspdf && window.jspdf.jsPDF, urls:[
+      'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+      'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js'] },
+  { name:'JSZip', ok:() => window.JSZip, urls:[
+      'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js',
+      'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js'] }
+];
+function loadScript(u){
+  return new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = u; s.onload = res; s.onerror = () => rej(new Error(u));
+    document.head.appendChild(s);
+  });
+}
+let libsPromise = null;
+function ensureLibs(){
+  if (libsPromise) return libsPromise;
+  libsPromise = (async () => {
+    for (const l of LIBS){
+      if (l.ok()) continue;
+      let done = false;
+      for (const u of l.urls){
+        try { await loadScript(u); if (l.ok()){ done = true; break; } } catch(e) {}
+      }
+      if (!done) throw new Error('Không tải được thư viện ' + l.name + '. Kiểm tra kết nối mạng rồi tải lại trang.');
+    }
+  })();
+  libsPromise.catch(() => { libsPromise = null; });
+  return libsPromise;
+}
+
+/* ============================================================
+   4. Giao diện
+   ============================================================ */
+const $ = id => document.getElementById(id);
+const S = { season:'', stage:'', date:'', files:[], busy:false };
+let uid = 0;
+
+function loadPrefs(){
+  try {
+    const p = JSON.parse(localStorage.getItem('bom-pdf-prefs') || '{}');
+    if (/^[A-Z]{2}\d{2}$/.test(p.season||'')) S.season = p.season;
+    if (STAGES.includes(p.stage)) S.stage = p.stage;
+  } catch(e) {}
+}
+function savePrefs(){
+  try { localStorage.setItem('bom-pdf-prefs', JSON.stringify({ season:S.season, stage:S.stage })); } catch(e) {}
+}
+
+function buildSettings(){
+  const dl = $('seasons');
+  for (const yr of [26,27,28,29]) for (const sn of ['SS','FW']){
+    const o = document.createElement('option'); o.value = sn + yr; dl.appendChild(o);
+  }
+  const seg = $('stage');
+  STAGES.forEach(st => {
+    const id = 'stage-' + st;
+    const inp = document.createElement('input');
+    inp.type = 'radio'; inp.name = 'stage'; inp.id = id; inp.value = st; inp.checked = (S.stage === st);
+    const lb = document.createElement('label'); lb.htmlFor = id; lb.textContent = st;
+    seg.append(inp, lb);
+    inp.addEventListener('change', () => { S.stage = st; savePrefs(); refreshNames(); });
+  });
+  $('season').value = S.season;
+  $('season').addEventListener('input', e => {
+    const v = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,'');
+    e.target.value = v; S.season = v; savePrefs(); refreshNames();
+  });
+  $('date').addEventListener('input', e => { S.date = e.target.value; refreshNames(); });
+  $('today').addEventListener('click', () => {
+    const d = new Date(), p = x => String(x).padStart(2,'0');
+    S.date = `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+    $('date').value = S.date; refreshNames();
+  });
+  $('clearDate').addEventListener('click', () => { S.date = ''; $('date').value = ''; refreshNames(); });
+}
+
+function nameFor(f){ return buildPdfName(S.season, S.stage, f.gender, f.model, S.date); }
+
+function uniqueNames(){
+  const used = new Map(), out = new Map();
+  for (const f of S.files){
+    const base = nameFor(f);
+    const k = used.get(base) || 0;
+    used.set(base, k+1);
+    out.set(f.id, (k ? `${base} (${k+1})` : base) + '.pdf');
+  }
+  return out;
+}
+
+function missingSettings(){
+  const miss = [];
+  if (!/^[A-Z]{2}\d{2}$/.test(S.season)) miss.push('Season (ví dụ FW27)');
+  if (!S.stage) miss.push('Stage');
+  return miss;
+}
+
+function refreshNames(){
+  const names = uniqueNames();
+  const sample = $('sample'), more = $('sampleMore');
+  if (S.files.length){
+    sample.classList.remove('is-empty');
+    sample.textContent = names.get(S.files[0].id);
+    if (S.files.length > 1){ more.hidden = false; more.textContent = `và ${S.files.length-1} file nữa. Tên từng file hiển thị bên dưới.`; }
+    else more.hidden = true;
+  } else {
+    sample.classList.add('is-empty');
+    const head = [S.season || 'FW27', S.stage || 'FLC', 'BOM'].join(' ');
+    sample.textContent = head + ' – W MODEL NAME' + (S.date ? ' - ' + fmtDateDMY(S.date) : '');
+    more.hidden = true;
+  }
+  for (const f of S.files){
+    f.outEl.innerHTML = '';
+    const b = document.createElement('b'); b.textContent = 'Tên file: ';
+    f.outEl.append(b, document.createTextNode(names.get(f.id)));
+  }
+  const miss = missingSettings();
+  const al = $('alert');
+  if (S.files.length && miss.length){
+    al.hidden = false; al.textContent = 'Cần chọn ' + miss.join(' và ') + ' để tải file về.';
+  } else al.hidden = true;
+  updateButtons();
+}
+
+function updateButtons(){
+  const ready = S.files.filter(f => f.blob);
+  const ok = missingSettings().length === 0;
+  $('bar').hidden = S.files.length === 0;
+  $('convert').disabled = S.busy || S.files.length === 0;
+  $('zip').disabled = S.busy || !ok || ready.length === 0;
+  $('clear').disabled = S.busy;
+  for (const f of S.files){
+    f.dlBtn.hidden = !f.blob;
+    f.dlBtn.disabled = !ok;
+    f.dlBtn.title = ok ? '' : 'Chọn Season và Stage trước';
+  }
+}
+
+function setState(f, text, cls){
+  f.stateEl.textContent = text;
+  f.stateEl.className = 'state' + (cls ? ' ' + cls : '');
+}
+
+function addRow(f){
+  const li = document.createElement('li');
+  li.innerHTML = `
+    <div class="src"><span class="name"></span><span class="meta"></span></div>
+    <label class="f"><span>Gender</span><input type="text" class="g" maxlength="6" autocomplete="off" spellcheck="false"></label>
+    <label class="f"><span>Model name</span><input type="text" class="m" autocomplete="off" spellcheck="false"></label>
+    <div class="act"><span class="state"></span>
+      <button type="button" class="btn small dl" hidden>Tải PDF</button>
+      <button type="button" class="btn small rm" aria-label="Bỏ file này">×</button></div>
+    <div class="out"></div>`;
+  li.querySelector('.name').textContent = f.file.name;
+  f.metaEl = li.querySelector('.meta');
+  f.stateEl = li.querySelector('.state');
+  f.outEl = li.querySelector('.out');
+  f.dlBtn = li.querySelector('.dl');
+  const g = li.querySelector('.g'), m = li.querySelector('.m');
+  g.value = f.gender; m.value = f.model;
+  g.addEventListener('input', () => { f.gender = g.value.toUpperCase(); g.value = f.gender; refreshNames(); });
+  m.addEventListener('input', () => { f.model = m.value.toUpperCase(); m.value = f.model; refreshNames(); });
+  f.dlBtn.addEventListener('click', () => {
+    const name = uniqueNames().get(f.id);
+    saveBlob(f.blob, name);
+  });
+  li.querySelector('.rm').addEventListener('click', () => {
+    if (S.busy) return;
+    S.files = S.files.filter(x => x !== f); li.remove(); refreshNames();
+  });
+  $('files').appendChild(li);
+  f.li = li;
+}
+
+function describeMeta(f){
+  const parts = [];
+  if (f.sheetCount) parts.push(f.sheetCount + ' sheet');
+  if (f.detSeason) parts.push('file ghi ' + f.detSeason);
+  f.metaEl.textContent = parts.join(' · ');
+  if (f.detSeason && S.season && f.detSeason !== S.season){
+    const d = document.createElement('span'); d.className = 'diff';
+    d.textContent = ' · khác Season đang chọn (' + S.season + ')';
+    f.metaEl.appendChild(d);
+  }
+}
+
+async function addFiles(list){
+  const arr = Array.from(list);
+  if (!arr.length) return;
+  try { await ensureLibs(); } catch(e){ showError(e.message); return; }
+  for (const file of arr){
+    if (!/\.(xlsx|xlsm)$/i.test(file.name)){
+      showError(`"${file.name}" không phải .xlsx/.xlsm nên đã bỏ qua. File .xls cũ cần mở bằng Excel rồi Save As .xlsx.`);
+      continue;
+    }
+    const f = { id: ++uid, file, gender:'', model:'', sheetCount:0, detSeason:'', blob:null, wb:null };
+    S.files.push(f);
+    addRow(f);
+    setState(f, 'Đang đọc…');
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(buf);
+      f.wb = wb;
+      f.sheetCount = wb.worksheets.filter(ws => !ws.state || ws.state === 'visible').length;
+      const meta = detectMeta(wb, file.name);
+      f.gender = meta.gender; f.model = meta.model; f.detSeason = meta.season;
+      f.li.querySelector('.g').value = f.gender;
+      f.li.querySelector('.m').value = f.model;
+      if (!S.season && meta.season){
+        S.season = meta.season; $('season').value = S.season; savePrefs();
+      }
+      setState(f, 'Chờ chuyển');
+    } catch(e){
+      f.error = true;
+      setState(f, 'Lỗi đọc file', 'err');
+      f.metaEl.textContent = e && e.message ? e.message : String(e);
+    }
+    S.files.forEach(describeMeta);
+    refreshNames();
+  }
+}
+
+function showError(msg){
+  const al = $('alert'); al.hidden = false; al.textContent = msg;
+}
+
+async function convertAll(){
+  if (S.busy) return;
+  try { await ensureLibs(); } catch(e){ showError(e.message); return; }
+  S.busy = true; updateButtons();
+  const q = +$('quality').value || 2;
+  let okCount = 0;
+  for (const f of S.files){
+    if (f.error || !f.wb) continue;
+    if (f.blob){ okCount++; continue; }
+    try {
+      setState(f, 'Đang xử lý…');
+      const res = await workbookToPdf(f.wb, { quality:q, fileName:f.file.name,
+        onProgress: t => setState(f, t) });
+      f.blob = res.blob;
+      setState(f, `Xong · ${res.sheets} sheet, ${res.pages} trang`, 'ok');
+      okCount++;
+    } catch(e){
+      console.error(e);
+      setState(f, 'Lỗi: ' + (e && e.message ? e.message : e), 'err');
+    }
+    updateButtons();
+  }
+  S.busy = false;
+  refreshNames();
+}
+
+function saveBlob(blob, name){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
+async function downloadZip(){
+  if (missingSettings().length) return;
+  await ensureLibs();
+  const zip = new JSZip();
+  const names = uniqueNames();
+  for (const f of S.files) if (f.blob) zip.file(names.get(f.id), f.blob);
+  const out = await zip.generateAsync({ type:'blob' });
+  const tag = [S.season, S.stage].filter(Boolean).join(' ');
+  saveBlob(out, `${tag} BOM PDF.zip`);
+}
+
+function init(){
+  loadPrefs();
+  buildSettings();
+  refreshNames();
+  const drop = $('drop'), picker = $('picker');
+  picker.addEventListener('change', () => { addFiles(picker.files).then(() => { picker.value = ''; }); });
+  ['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+  drop.addEventListener('drop', e => addFiles(e.dataTransfer.files));
+  $('convert').addEventListener('click', convertAll);
+  $('zip').addEventListener('click', downloadZip);
+  $('clear').addEventListener('click', () => {
+    if (S.busy) return;
+    S.files = []; $('files').innerHTML = ''; refreshNames();
+  });
+  ensureLibs().catch(e => showError(e.message));
+}
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
