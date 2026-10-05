@@ -232,6 +232,17 @@ function normGender(raw){
   if (/^men|^man$/.test(l)) return 'M';
   return g.toUpperCase().slice(0,6);
 }
+// Tên model trong sheet đôi khi thiếu từ đầu (vd "PLATE TOE"), tên file thì đủ ("EVANSTON PLATE TOE").
+// Nếu một bên chứa trọn bên kia thì lấy bên dài hơn, còn lại ưu tiên sheet.
+function pickModel(sheetModel, fileModel){
+  const s = (sheetModel||'').trim(), f = (fileModel||'').trim();
+  if (!s) return f;
+  if (!f) return s;
+  const norm = x => ' ' + x.toUpperCase().replace(/[^A-Z0-9]+/g,' ').trim() + ' ';
+  const ns = norm(s), nf = norm(f);
+  if (nf.length > ns.length && nf.includes(ns)) return f;
+  return s;
+}
 function metaFromFilename(fileName){
   const base = fileName.replace(/\.[^.]+$/,'');
   const toks = base.split(/[_\s]+/).filter(Boolean);
@@ -877,7 +888,7 @@ function detectMeta(wb, fileName){
   const fb = metaFromFilename(fileName);
   meta.season = /^[A-Z]{2}\d{2}$/.test(meta.season) ? meta.season : fb.season;
   meta.gender = meta.gender || fb.gender;
-  meta.model  = meta.model ? cleanModel(meta.model, meta.gender) : fb.model;
+  meta.model  = pickModel(meta.model ? cleanModel(meta.model, meta.gender) : '', fb.model);
   return meta;
 }
 
