@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="vi">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>BOM Excel sang PDF</title>
+<title>BOM Excel to PDF</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -131,16 +131,16 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>Chuyển BOM Excel sang PDF</h1>
-  <p class="lede">Thêm nhiều file Excel một lúc. Mỗi file được gom tất cả sheet thành 1 PDF và đặt tên theo rule của team.</p>
+  <h1>Convert BOM Excel to PDF</h1>
+  <p class="lede">Add several Excel files at once. All sheets of each file are merged into one PDF, named by the team's naming rule.</p>
 
-  <section class="panel namebox" aria-label="Tên file PDF">
+  <section class="panel namebox" aria-label="PDF file name">
     <p class="rule">SEASON STAGE BOM – GENDER MODEL NAME – DATE.MONTH.YEAR (CAPITAL LETTER ONLY)</p>
     <span class="sample is-empty" id="sample">FW27 FLC BOM – W MODEL NAME</span>
     <p class="more" id="sampleMore" hidden></p>
   </section>
 
-  <section class="panel" aria-label="Thiết lập tên file">
+  <section class="panel" aria-label="File name settings">
     <div class="settings">
       <div class="field">
         <label class="lbl" for="season">Season</label>
@@ -152,39 +152,39 @@
         <div class="seg" role="radiogroup" aria-labelledby="stageLbl" id="stage"></div>
       </div>
       <div class="field">
-        <label class="lbl" for="date">Date <span class="hint">(để trống nếu file không có ngày)</span></label>
+        <label class="lbl" for="date">Date <span class="hint">(leave blank if the file has no date)</span></label>
         <div class="daterow">
           <input type="date" id="date">
-          <button class="btn" type="button" id="today">Hôm nay</button>
-          <button class="btn" type="button" id="clearDate">Xóa</button>
+          <button class="btn" type="button" id="today">Today</button>
+          <button class="btn" type="button" id="clearDate">Clear</button>
         </div>
       </div>
     </div>
     <p class="alert" id="alert" role="status" hidden></p>
   </section>
 
-  <section class="panel" aria-label="File Excel">
+  <section class="panel" aria-label="Excel files">
     <label class="drop" id="drop">
       <input type="file" id="picker" accept=".xlsx,.xlsm" multiple>
-      <strong>Kéo thả file Excel vào đây, hoặc bấm để chọn</strong>
-      <span>Chọn được nhiều file một lúc (.xlsx, .xlsm). File được xử lý ngay trên máy, không upload đi đâu.</span>
+      <strong>Drag and drop Excel files here, or click to choose</strong>
+      <span>You can choose several files at once (.xlsx, .xlsm). Files are processed in your browser and are never uploaded.</span>
     </label>
     <ul class="files" id="files"></ul>
     <div class="bar" id="bar" hidden>
-      <button class="btn primary" type="button" id="convert">Chuyển sang PDF</button>
-      <button class="btn" type="button" id="zip" disabled>Tải tất cả (.zip)</button>
-      <button class="btn" type="button" id="clear">Xóa danh sách</button>
+      <button class="btn primary" type="button" id="convert">Convert to PDF</button>
+      <button class="btn" type="button" id="zip" disabled>Download all (.zip)</button>
+      <button class="btn" type="button" id="clear">Clear list</button>
       <span class="grow"></span>
-      <label>Chất lượng
+      <label>Quality
         <select id="quality">
-          <option value="2">Chuẩn</option>
-          <option value="3">Cao (file nặng hơn)</option>
+          <option value="2">Standard</option>
+          <option value="3">High (larger files)</option>
         </select>
       </label>
     </div>
   </section>
 
-  <p class="note">PDF được vẽ lại từ nội dung Excel theo vùng in, khổ giấy và tỉ lệ fit-to-page của từng sheet. Chữ trong PDF là ảnh nên không bôi đen/copy được. Sheet đang ẩn sẽ bị bỏ qua.</p>
+  <p class="note">PDFs are redrawn from the Excel content using each sheet's print area, paper size and fit-to-page scale. Text in the PDF is an image, so it cannot be selected or copied. Hidden sheets are skipped.</p>
 </div>
 
 <script>
@@ -911,7 +911,7 @@ async function workbookToPdf(wb, o){
   const { quality, onProgress } = o;
   const theme = parseTheme(wb._themes && (wb._themes.theme1 || Object.values(wb._themes)[0]));
   const sheets = wb.worksheets.filter(ws => !ws.state || ws.state === 'visible');
-  if (!sheets.length) throw new Error('File không có sheet nào đang hiển thị.');
+  if (!sheets.length) throw new Error('The file has no visible sheets.');
   const plans = sheets.map(planSheet);
   const total = plans.reduce((a,p) => a + p.pages.length, 0);
   const imgCache = await loadImages(wb);
@@ -922,7 +922,7 @@ async function workbookToPdf(wb, o){
     const plan = plans[i];
     for (let p=0;p<plan.pages.length;p++){
       n++;
-      onProgress && onProgress(`Đang vẽ sheet ${i+1}/${plans.length} (trang ${n}/${total})`);
+      onProgress && onProgress(`Rendering sheet ${i+1}/${plans.length} (page ${n}/${total})`);
       await tick();
       drawPage(canvas, plan, p, { R:quality, theme, imgCache, fileName:o.fileName, pageNo:n, total });
       const data = canvas.toDataURL('image/jpeg', 0.92);
@@ -968,7 +968,7 @@ function ensureLibs(){
       for (const u of l.urls){
         try { await loadScript(u); if (l.ok()){ done = true; break; } } catch(e) {}
       }
-      if (!done) throw new Error('Không tải được thư viện ' + l.name + '. Kiểm tra kết nối mạng rồi tải lại trang.');
+      if (!done) throw new Error('Could not load the ' + l.name + ' library. Check your internet connection and reload the page.');
     }
   })();
   libsPromise.catch(() => { libsPromise = null; });
@@ -1036,7 +1036,7 @@ function uniqueNames(){
 
 function missingSettings(){
   const miss = [];
-  if (!/^[A-Z]{2}\d{2}$/.test(S.season)) miss.push('Season (ví dụ FW27)');
+  if (!/^[A-Z]{2}\d{2}$/.test(S.season)) miss.push('Season (e.g. FW27)');
   if (!S.stage) miss.push('Stage');
   return miss;
 }
@@ -1047,7 +1047,7 @@ function refreshNames(){
   if (S.files.length){
     sample.classList.remove('is-empty');
     sample.textContent = names.get(S.files[0].id);
-    if (S.files.length > 1){ more.hidden = false; more.textContent = `và ${S.files.length-1} file nữa. Tên từng file hiển thị bên dưới.`; }
+    if (S.files.length > 1){ more.hidden = false; more.textContent = `and ${S.files.length-1} more file${S.files.length-1>1?'s':''}. Each file's name is shown below.`; }
     else more.hidden = true;
   } else {
     sample.classList.add('is-empty');
@@ -1057,13 +1057,13 @@ function refreshNames(){
   }
   for (const f of S.files){
     f.outEl.innerHTML = '';
-    const b = document.createElement('b'); b.textContent = 'Tên file: ';
+    const b = document.createElement('b'); b.textContent = 'File name: ';
     f.outEl.append(b, document.createTextNode(names.get(f.id)));
   }
   const miss = missingSettings();
   const al = $('alert');
   if (S.files.length && miss.length){
-    al.hidden = false; al.textContent = 'Cần chọn ' + miss.join(' và ') + ' để tải file về.';
+    al.hidden = false; al.textContent = 'Choose ' + miss.join(' and ') + ' before downloading.';
   } else al.hidden = true;
   updateButtons();
 }
@@ -1078,7 +1078,7 @@ function updateButtons(){
   for (const f of S.files){
     f.dlBtn.hidden = !f.blob;
     f.dlBtn.disabled = !ok;
-    f.dlBtn.title = ok ? '' : 'Chọn Season và Stage trước';
+    f.dlBtn.title = ok ? '' : 'Choose Season and Stage first';
   }
 }
 
@@ -1094,8 +1094,8 @@ function addRow(f){
     <label class="f"><span>Gender</span><input type="text" class="g" maxlength="6" autocomplete="off" spellcheck="false"></label>
     <label class="f"><span>Model name</span><input type="text" class="m" autocomplete="off" spellcheck="false"></label>
     <div class="act"><span class="state"></span>
-      <button type="button" class="btn small dl" hidden>Tải PDF</button>
-      <button type="button" class="btn small rm" aria-label="Bỏ file này">×</button></div>
+      <button type="button" class="btn small dl" hidden>Download PDF</button>
+      <button type="button" class="btn small rm" aria-label="Remove this file">×</button></div>
     <div class="out"></div>`;
   li.querySelector('.name').textContent = f.file.name;
   f.metaEl = li.querySelector('.meta');
@@ -1120,12 +1120,12 @@ function addRow(f){
 
 function describeMeta(f){
   const parts = [];
-  if (f.sheetCount) parts.push(f.sheetCount + ' sheet');
-  if (f.detSeason) parts.push('file ghi ' + f.detSeason);
+  if (f.sheetCount) parts.push(f.sheetCount + (f.sheetCount === 1 ? ' sheet' : ' sheets'));
+  if (f.detSeason) parts.push('file says ' + f.detSeason);
   f.metaEl.textContent = parts.join(' · ');
   if (f.detSeason && S.season && f.detSeason !== S.season){
     const d = document.createElement('span'); d.className = 'diff';
-    d.textContent = ' · khác Season đang chọn (' + S.season + ')';
+    d.textContent = ' · differs from selected Season (' + S.season + ')';
     f.metaEl.appendChild(d);
   }
 }
@@ -1136,13 +1136,13 @@ async function addFiles(list){
   try { await ensureLibs(); } catch(e){ showError(e.message); return; }
   for (const file of arr){
     if (!/\.(xlsx|xlsm)$/i.test(file.name)){
-      showError(`"${file.name}" không phải .xlsx/.xlsm nên đã bỏ qua. File .xls cũ cần mở bằng Excel rồi Save As .xlsx.`);
+      showError(`"${file.name}" is not .xlsx/.xlsm and was skipped. Old .xls files must be opened in Excel and saved as .xlsx first.`);
       continue;
     }
     const f = { id: ++uid, file, gender:'', model:'', sheetCount:0, detSeason:'', blob:null, wb:null };
     S.files.push(f);
     addRow(f);
-    setState(f, 'Đang đọc…');
+    setState(f, 'Reading…');
     try {
       const buf = await file.arrayBuffer();
       const wb = new ExcelJS.Workbook();
@@ -1156,10 +1156,10 @@ async function addFiles(list){
       if (!S.season && meta.season){
         S.season = meta.season; $('season').value = S.season; savePrefs();
       }
-      setState(f, 'Chờ chuyển');
+      setState(f, 'Ready');
     } catch(e){
       f.error = true;
-      setState(f, 'Lỗi đọc file', 'err');
+      setState(f, 'Could not read file', 'err');
       f.metaEl.textContent = e && e.message ? e.message : String(e);
     }
     S.files.forEach(describeMeta);
@@ -1181,15 +1181,15 @@ async function convertAll(){
     if (f.error || !f.wb) continue;
     if (f.blob){ okCount++; continue; }
     try {
-      setState(f, 'Đang xử lý…');
+      setState(f, 'Processing…');
       const res = await workbookToPdf(f.wb, { quality:q, fileName:f.file.name,
         onProgress: t => setState(f, t) });
       f.blob = res.blob;
-      setState(f, `Xong · ${res.sheets} sheet, ${res.pages} trang`, 'ok');
+      setState(f, `Done · ${res.sheets} ${res.sheets===1?'sheet':'sheets'}, ${res.pages} ${res.pages===1?'page':'pages'}`, 'ok');
       okCount++;
     } catch(e){
       console.error(e);
-      setState(f, 'Lỗi: ' + (e && e.message ? e.message : e), 'err');
+      setState(f, 'Error: ' + (e && e.message ? e.message : e), 'err');
     }
     updateButtons();
   }

@@ -1,20 +1,20 @@
-# BOM Excel sang PDF
+# BOM Excel to PDF
 
-Tool chạy hoàn toàn trên trình duyệt (không có server, không upload file).
+Runs entirely in the browser (no server, no upload).
 
-## Đưa lên GitHub Pages để có link
+## Publish with GitHub Pages
 
-1. Vào github.com, bấm **New repository**, đặt tên (ví dụ `bom-pdf-tool`), chọn **Public**, bấm **Create repository**.
-2. Bấm **uploading an existing file**, kéo file `index.html` vào, bấm **Commit changes**.
-3. Vào **Settings > Pages**. Ở mục **Build and deployment**, chọn **Deploy from a branch**, branch **main**, thư mục **/(root)**, bấm **Save**.
-4. Chờ khoảng 1 phút. Link sẽ là `https://<tên-github>.github.io/bom-pdf-tool/`
+1. Create a new **Public** repository on github.com (for example `bom-pdf-tool`).
+2. Put `index.html` at the root of the repository, commit and push.
+3. Go to **Settings > Pages**. Under **Build and deployment**, choose **Deploy from a branch**, branch **main**, folder **/(root)**, then **Save**.
+4. After about a minute the link is `https://<github-username>.github.io/<repo-name>/`
 
-Lưu ý: repo Public thì ai có link đều mở được tool, nhưng file Excel không bao giờ rời khỏi máy người dùng.
+Note: anyone with the link can open the tool, but the Excel files never leave the user's computer.
 
-## Cách dùng
+## How to use
 
-1. Chọn **Season** (tự điền theo file đầu tiên nếu để trống) và **Stage** (LR2, FLC, SMS, CFM). Date để trống nếu file không có ngày.
-2. Kéo thả hoặc chọn nhiều file Excel một lúc. Gender và Model name tự đọc từ file, sửa được ngay trên từng dòng.
-3. Bấm **Chuyển sang PDF**, rồi tải từng file hoặc **Tải tất cả (.zip)**.
+1. Choose **Season** (auto-filled from the first file if left empty) and **Stage** (LR2, FLC, SMS, CFM). Leave Date empty if the file has no date.
+2. Drag and drop, or choose, several Excel files at once. Gender and Model name are read from each file and can be edited per row.
+3. Click **Convert to PDF**, then download each file or **Download all (.zip)**.
 
-Tên file: `SEASON STAGE BOM – GENDER MODEL NAME - D.M.YYYY.pdf` (toàn bộ chữ in hoa).
+File name: `SEASON STAGE BOM – GENDER MODEL NAME - D.M.YYYY.pdf` (all capital letters).
