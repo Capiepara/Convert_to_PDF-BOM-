@@ -865,23 +865,38 @@ async function loadImages(wb){
   return cache;
 }
 
+function mergeSlaves(ws){
+  // ExcelJS trả về giá trị của ô gộp chính cho cả các ô phụ, nên phải loại các ô phụ ra khi dò nhãn.
+  const set = new Set();
+  for (const str of ((ws.model && ws.model.merges) || [])){
+    const rg = parseRange(str); if (!rg) continue;
+    for (let r=rg.r1;r<=rg.r2;r++) for (let c=rg.c1;c<=rg.c2;c++)
+      if (r!==rg.r1 || c!==rg.c1) set.add(r+','+c);
+  }
+  return set;
+}
+const META_LABELS = /^(season|gender|sample name|model name|style name|factory|valid period|category|colorway|sap#?|costing size|size range|tooling.*|newness.*|material %|submit date)$/i;
 function detectMeta(wb, fileName){
   const meta = { season:'', gender:'', model:'' };
-  const right = (ws, r, c) => {
-    for (let k=1;k<=4;k++){
-      const t = cellText(ws.getCell(r, c+k)).trim();
-      if (t) return t;
-    }
-    return '';
-  };
   for (const ws of wb.worksheets){
     if (ws.state && ws.state !== 'visible') continue;
+    const slave = mergeSlaves(ws);
+    const right = (r, c) => {
+      for (let k=1;k<=6;k++){
+        if (slave.has(r+','+(c+k))) continue;
+        const t = cellText(ws.getCell(r, c+k)).trim();
+        if (!t) continue;
+        return META_LABELS.test(t) ? '' : t;   // gặp nhãn khác nghĩa là ô giá trị đang trống
+      }
+      return '';
+    };
     const maxR = Math.min(ws.rowCount||0, 20), maxC = Math.min(ws.columnCount||0, 14);
     for (let r=1;r<=maxR;r++) for (let c=1;c<=maxC;c++){
+      if (slave.has(r+','+c)) continue;
       const t = cellText(ws.getCell(r, c)).trim().toLowerCase().replace(/[:：]\s*$/,'');
-      if (t==='season' && !meta.season) meta.season = right(ws,r,c).toUpperCase();
-      else if (t==='gender' && !meta.gender) meta.gender = normGender(right(ws,r,c));
-      else if ((t==='sample name' || t==='model name' || t==='style name') && !meta.model) meta.model = right(ws,r,c);
+      if (t==='season' && !meta.season) meta.season = right(r,c).toUpperCase();
+      else if (t==='gender' && !meta.gender) meta.gender = normGender(right(r,c));
+      else if ((t==='sample name' || t==='model name' || t==='style name') && !meta.model) meta.model = right(r,c);
     }
     if (meta.season && meta.gender && meta.model) break;
   }
