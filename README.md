@@ -17,4 +17,4 @@ Note: anyone with the link can open the tool, but the Excel files never leave th
 2. Drag and drop, or choose, several Excel files at once. Gender and Model name are read from each file and can be edited per row.
 3. Click **Convert to PDF**, then download each file or **Download all (.zip)**.
 
-File name: `SEASON STAGE BOM – GENDER MODEL NAME - D.M.YYYY.pdf` (all capital letters).
+File name: `SEASON STAGE BOM – GENDER MODEL NAME - MM.DD.YYYY.pdf` (all capital letters).

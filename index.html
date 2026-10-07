@@ -177,8 +177,8 @@
       <span class="grow"></span>
       <label>Quality
         <select id="quality">
-          <option value="2">Standard</option>
-          <option value="3">High (larger files)</option>
+          <option value="standard">Standard (sharp, smaller files)</option>
+          <option value="high" selected>High (sharpest, larger files)</option>
         </select>
       </label>
     </div>
@@ -204,25 +204,49 @@ function escapeRe(s){ return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'); }
 function sanitizeName(s){
   return s.replace(/[\\\/:*?"<>|]/g,' ').replace(/[\u0000-\u001f]/g,'').replace(/\s+/g,' ').trim();
 }
-function fmtDateDMY(iso){
+// MM.DD.YYYY (dấu "/" không được phép trong tên file nên dùng dấu chấm)
+function fmtDateMDY(iso){
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
-  return m ? `${+m[3]}.${+m[2]}.${m[1]}` : '';
+  return m ? `${m[2]}.${m[3]}.${m[1]}` : '';
 }
 function buildPdfName(season, stage, gender, model, iso){
   const head = [season, stage, 'BOM'].map(s => (s||'').trim()).filter(Boolean).join(' ');
   const mid  = [gender, model].map(s => (s||'').trim()).filter(Boolean).join(' ');
   let n = head;
   if (mid) n += ' – ' + mid;
-  const d = fmtDateDMY(iso);
+  const d = fmtDateMDY(iso);
   if (d) n += ' - ' + d;
   return sanitizeName(n.toUpperCase());
 }
-function cleanModel(raw, gender){
-  let m = String(raw||'').replace(/\([^)]*\)/g,' ').replace(/\s+/g,' ').trim();
-  if (gender){
-    m = m.replace(new RegExp('(^|\\s)' + escapeRe(gender) + '$','i'),'').trim();
-  }
-  return m.toUpperCase();
+const SEASON_RE = /\b(?:SS|FW|SP|SU|FA|HO)\d{2}\b/i;
+const DEVCODE_RE = /\b\d{2}[A-Z]{2}-\d{3,5}[A-Z]?\b/gi;      // 25KU-1120D
+const RKCODE_RE  = /\bRK-[A-Z0-9]+(?:-[A-Z0-9]+)*\b/gi;      // RK-W-2817
+const DATE_TAIL_RE = /[\s\-–]*\b\d{1,2}[.\-\/]\d{1,2}[.\-\/](?:\d{4}|\d{2})\s*$/;
+// Tách "gender" khỏi chuỗi tên model. Hiểu các kiểu:
+//   "M_SNAPLINE 6" WP CF", "M CLASSIC ALPINE 2", "M-CLASSIC ALPINE 2", "Bridgeline shorty WP W (25KU-1025)",
+//   "SS28 FLC BOM-M_SNAPLINE 6INCH WP CF 10.5.2026"
+function splitGender(raw){
+  let s = String(raw||'').replace(/_+/g,' ').replace(/\([^)]*\)/g,' ');
+  s = s.replace(/^\s*(?:(?:SS|FW|SP|SU|FA|HO)\d{2}\s+)?(?:(?:LR2|FLC|SMS|CFM)\s+)?BOM\s*[-–—:]*\s*/i,'');
+  s = s.replace(DATE_TAIL_RE,'').replace(DEVCODE_RE,' ').replace(RKCODE_RE,' ');
+  s = s.replace(/[“”″]/g,'"').replace(/\s+/g,' ').trim();
+  let gender = '', m;
+  if ((m = /^([MWKY])(?:\s*[-–]\s*|\s+)(?=\S)/i.exec(s))){ gender = m[1].toUpperCase(); s = s.slice(m[0].length); }
+  else if ((m = /\s([MWKY])$/i.exec(s))){ gender = m[1].toUpperCase(); s = s.slice(0, m.index); }
+  s = s.replace(/(\d)\s*(?:"|''|INCHES\b|INCH\b)/gi, '$1INCH');   // 6" -> 6INCH (dấu " không dùng được trong tên file)
+  return { gender, model: s.replace(/\s+/g,' ').trim().toUpperCase() };
+}
+function genderFromSize(str){
+  const m = /^\s*([MWKY])['’]?S\b/i.exec(String(str||''));
+  return m ? m[1].toUpperCase() : '';
+}
+function genderFromCategory(str){
+  const l = String(str||'').trim().toLowerCase();
+  if (/^wom/.test(l)) return 'W';
+  if (/^men/.test(l)) return 'M';
+  if (/^(kid|child|boy|girl)/.test(l)) return 'K';
+  if (/^youth/.test(l)) return 'Y';
+  return '';
 }
 function normGender(raw){
   const g = String(raw||'').trim();
@@ -244,14 +268,16 @@ function pickModel(sheetModel, fileModel){
   return s;
 }
 function metaFromFilename(fileName){
-  const base = fileName.replace(/\.[^.]+$/,'');
-  const toks = base.split(/[_\s]+/).filter(Boolean);
-  const si = toks.findIndex(t => /^(SS|FW|SP|SU|FA|HO)\d{2}$/i.test(t));
-  const season = si >= 0 ? toks[si].toUpperCase() : '';
-  const before = (si >= 0 ? toks.slice(0, si) : toks).filter(t => !/^\d|^RK-|^\(/i.test(t));
-  let gender = '';
-  if (before.length > 1 && /^[MWKYB]$/i.test(before[before.length-1])) gender = before.pop().toUpperCase();
-  return { season, gender, model: before.join(' ').toUpperCase() };
+  const base = fileName.replace(/\.[^.]+$/,'').replace(/_+/g,' ').replace(/\s+/g,' ').trim();
+  const sm = SEASON_RE.exec(base);
+  let season = '', text = base;
+  if (sm){
+    season = sm[0].toUpperCase();
+    // "BRIDGELINE SHORTY WP W FW27 ..." -> lấy phần trước season; "SS28 FLC BOM-M ..." -> lấy phần sau season
+    text = sm.index > 3 ? base.slice(0, sm.index) : base.slice(sm.index + sm[0].length);
+  }
+  const g = splitGender(text);
+  return { season, gender:g.gender, model:g.model };
 }
 
 /* ---------- Màu ---------- */
@@ -878,6 +904,7 @@ function mergeSlaves(ws){
 const META_LABELS = /^(season|gender|sample name|model name|style name|factory|valid period|category|colorway|sap#?|costing size|size range|tooling.*|newness.*|material %|submit date)$/i;
 function detectMeta(wb, fileName){
   const meta = { season:'', gender:'', model:'' };
+  const raw = { gender:'', model:'', size:'', category:'' };
   for (const ws of wb.worksheets){
     if (ws.state && ws.state !== 'visible') continue;
     const slave = mergeSlaves(ws);
@@ -895,20 +922,30 @@ function detectMeta(wb, fileName){
       if (slave.has(r+','+c)) continue;
       const t = cellText(ws.getCell(r, c)).trim().toLowerCase().replace(/[:：]\s*$/,'');
       if (t==='season' && !meta.season) meta.season = right(r,c).toUpperCase();
-      else if (t==='gender' && !meta.gender) meta.gender = normGender(right(r,c));
-      else if ((t==='sample name' || t==='model name' || t==='style name') && !meta.model) meta.model = right(r,c);
+      else if (t==='gender' && !raw.gender) raw.gender = right(r,c);
+      else if ((t==='sample name' || t==='model name' || t==='style name') && !raw.model) raw.model = right(r,c);
+      else if ((t==='size range' || t==='costing size') && !raw.size) raw.size = right(r,c);
+      else if (t==='category' && !raw.category) raw.category = right(r,c);
     }
-    if (meta.season && meta.gender && meta.model) break;
+    if (meta.season && raw.gender && raw.model) break;
   }
   const fb = metaFromFilename(fileName);
+  const sm = splitGender(raw.model);
   meta.season = /^[A-Z]{2}\d{2}$/.test(meta.season) ? meta.season : fb.season;
-  meta.gender = meta.gender || fb.gender;
-  meta.model  = pickModel(meta.model ? cleanModel(meta.model, meta.gender) : '', fb.model);
+  // thứ tự ưu tiên: ô Gender > tiền tố/hậu tố trong tên model (sheet) > tên file > Size Range (W'S / M'S) > Category
+  meta.gender = normGender(raw.gender) || sm.gender || fb.gender || genderFromSize(raw.size) || genderFromCategory(raw.category);
+  meta.model  = pickModel(sm.model, fb.model);
   return meta;
 }
 
+// Độ nét: R = số pixel trên mỗi pt của trang PDF (3 ≈ 216 dpi, 4.5 ≈ 324 dpi).
+// Mỗi trang bị giới hạn ~16 triệu pixel để không vượt giới hạn canvas của trình duyệt (Safari/iOS).
+const QUALITY = { standard:{ R:3, jpeg:0.95 }, high:{ R:4.5, jpeg:0.98 } };
+const MAX_PIXELS = 16e6;
+
 async function workbookToPdf(wb, o){
-  const { quality, onProgress } = o;
+  const { onProgress } = o;
+  const preset = QUALITY[o.quality] || QUALITY.high;
   const theme = parseTheme(wb._themes && (wb._themes.theme1 || Object.values(wb._themes)[0]));
   const sheets = wb.worksheets.filter(ws => !ws.state || ws.state === 'visible');
   if (!sheets.length) throw new Error('The file has no visible sheets.');
@@ -924,8 +961,9 @@ async function workbookToPdf(wb, o){
       n++;
       onProgress && onProgress(`Rendering sheet ${i+1}/${plans.length} (page ${n}/${total})`);
       await tick();
-      drawPage(canvas, plan, p, { R:quality, theme, imgCache, fileName:o.fileName, pageNo:n, total });
-      const data = canvas.toDataURL('image/jpeg', 0.92);
+      const R = Math.min(preset.R, Math.sqrt(MAX_PIXELS / (plan.pw * plan.ph)));
+      drawPage(canvas, plan, p, { R, theme, imgCache, fileName:o.fileName, pageNo:n, total });
+      const data = canvas.toDataURL('image/jpeg', preset.jpeg);
       const orient = plan.pw > plan.ph ? 'l' : 'p';
       const fmt = [Math.min(plan.pw,plan.ph), Math.max(plan.pw,plan.ph)];
       if (!pdf) pdf = new jsPDF({ orientation:orient, unit:'pt', format:fmt, compress:true });
@@ -1052,7 +1090,7 @@ function refreshNames(){
   } else {
     sample.classList.add('is-empty');
     const head = [S.season || 'FW27', S.stage || 'FLC', 'BOM'].join(' ');
-    sample.textContent = head + ' – W MODEL NAME' + (S.date ? ' - ' + fmtDateDMY(S.date) : '');
+    sample.textContent = head + ' – W MODEL NAME' + (S.date ? ' - ' + fmtDateMDY(S.date) : '');
     more.hidden = true;
   }
   for (const f of S.files){
@@ -1175,7 +1213,7 @@ async function convertAll(){
   if (S.busy) return;
   try { await ensureLibs(); } catch(e){ showError(e.message); return; }
   S.busy = true; updateButtons();
-  const q = +$('quality').value || 2;
+  const q = $('quality').value;
   let okCount = 0;
   for (const f of S.files){
     if (f.error || !f.wb) continue;
