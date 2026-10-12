@@ -175,16 +175,16 @@
       <button class="btn" type="button" id="zip" disabled>Download all (.zip)</button>
       <button class="btn" type="button" id="clear">Clear list</button>
       <span class="grow"></span>
-      <label>Quality
-        <select id="quality">
-          <option value="standard">Standard (sharp, smaller files)</option>
-          <option value="high" selected>High (sharpest, larger files)</option>
+      <label>Output
+        <select id="mode">
+          <option value="vector" selected>Sharp vector (recommended)</option>
+          <option value="image">Exact fonts (image)</option>
         </select>
       </label>
     </div>
   </section>
 
-  <p class="note">PDFs are redrawn from the Excel content using each sheet's print area, paper size and fit-to-page scale. Text in the PDF is an image, so it cannot be selected or copied. Hidden sheets are skipped.</p>
+  <p class="note">PDFs are redrawn from the Excel content using each sheet's print area, paper size and fit-to-page scale. <b>Sharp vector</b> keeps text, borders and fills as real vector graphics (crisp at any zoom, text can be selected). Fonts are replaced by Arial/Times/Courier look-alikes squeezed to the original Calibri widths; text with Chinese or other non-Western characters, and pictures, are embedded as images. <b>Exact fonts (image)</b> reproduces your own fonts but as a picture, so it gets blurry when zoomed. Hidden sheets are skipped.</p>
 </div>
 
 <script>
@@ -694,9 +694,206 @@ function drawBorder(ctx, edge, x1, y1, x2, y2, theme){
   ctx.restore();
 }
 
-function drawCellText(ctx, cell, rect, ext, theme, isMerged){
+/* ---------- PDF writer tự viết (không cần jsPDF) ---------- */
+// Độ rộng chữ của các font chuẩn PDF (AFM, đơn vị 1/1000 em, mã WinAnsi 32..255)
+const WIDTHS = {"HELV":[278,278,355,556,556,889,667,191,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,278,278,584,584,584,556,1015,667,667,722,722,667,611,778,722,278,500,667,556,833,722,778,667,778,722,667,611,722,667,944,667,667,611,278,278,278,469,556,333,556,556,500,556,556,278,556,556,222,222,500,222,833,556,556,556,556,333,500,278,556,500,722,500,500,500,334,260,334,584,0,556,0,222,556,333,1000,556,556,333,1000,667,333,1000,0,611,0,0,222,222,333,333,350,556,1000,333,1000,500,333,944,0,500,500,278,333,556,556,556,556,260,556,333,737,370,556,584,333,737,333,400,584,333,333,333,556,537,278,333,333,365,556,834,834,834,611,667,667,667,667,667,667,1000,722,667,667,667,667,278,278,278,278,722,722,778,778,778,778,778,584,778,722,722,722,722,667,667,611,556,556,556,556,556,556,889,500,556,556,556,556,278,278,278,278,556,556,556,556,556,556,556,584,611,556,556,556,556,500,556,500],"HELVB":[278,333,474,556,556,889,722,238,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,333,333,584,584,584,611,975,722,722,722,722,667,611,778,722,278,556,722,611,833,722,778,667,778,722,667,611,722,667,944,667,667,611,333,278,333,584,556,333,556,611,556,611,556,333,611,611,278,278,556,278,889,611,611,611,611,389,556,333,611,556,778,556,556,500,389,280,389,584,0,556,0,278,556,500,1000,556,556,333,1000,667,333,1000,0,611,0,0,278,278,500,500,350,556,1000,333,1000,556,333,944,0,500,556,278,333,556,556,556,556,280,556,333,737,370,556,584,333,737,333,400,584,333,333,333,611,556,278,333,333,365,556,834,834,834,611,722,722,722,722,722,722,1000,722,667,667,667,667,278,278,278,278,722,722,778,778,778,778,778,584,778,722,722,722,722,667,667,611,556,556,556,556,556,556,889,556,556,556,556,556,278,278,278,278,611,611,611,611,611,611,611,584,611,611,611,611,611,556,611,556],"TIMES":[250,333,408,500,500,833,778,180,333,333,500,564,250,333,250,278,500,500,500,500,500,500,500,500,500,500,278,278,564,564,564,444,921,722,667,667,722,611,556,722,722,333,389,722,611,889,722,722,556,722,667,556,611,722,722,944,722,722,611,333,278,333,469,500,333,444,500,444,500,444,333,500,500,278,278,500,278,778,500,500,500,500,333,389,278,500,500,722,500,500,444,480,200,480,541,0,500,0,333,500,444,1000,500,500,333,1000,556,333,889,0,611,0,0,333,333,444,444,350,500,1000,333,980,389,333,722,0,444,500,250,333,500,500,500,500,200,500,333,760,276,500,564,333,760,333,400,564,300,300,333,500,453,250,333,300,310,500,750,750,750,444,722,722,722,722,722,722,889,667,611,611,611,611,333,333,333,333,722,722,722,722,722,722,722,564,722,722,722,722,722,722,556,500,444,444,444,444,444,444,667,444,444,444,444,444,278,278,278,278,500,500,500,500,500,500,500,564,500,500,500,500,500,500,500,500],"TIMESB":[250,333,555,500,500,1000,833,278,333,333,500,570,250,333,250,278,500,500,500,500,500,500,500,500,500,500,333,333,570,570,570,500,930,722,667,722,722,667,611,778,778,389,500,778,667,944,722,778,611,778,722,556,667,722,722,1000,722,722,667,333,278,333,581,500,333,500,556,444,556,444,333,500,556,278,333,556,278,833,556,500,556,556,444,389,333,556,500,722,500,500,444,394,220,394,520,0,500,0,333,500,500,1000,500,500,333,1000,556,333,1000,0,667,0,0,333,333,500,500,350,500,1000,333,1000,389,333,722,0,444,500,250,333,500,500,500,500,220,500,333,747,300,500,570,333,747,333,400,570,300,300,333,556,540,250,333,300,330,500,750,750,750,500,722,722,722,722,722,722,1000,722,667,667,667,667,389,389,389,389,722,722,778,778,778,778,778,570,778,722,722,722,722,722,611,556,500,500,500,500,500,500,722,444,444,444,444,444,278,278,278,278,500,556,500,500,500,500,500,570,500,556,556,556,556,500,556,500],"TIMESI":[250,333,420,500,500,833,778,214,333,333,500,675,250,333,250,278,500,500,500,500,500,500,500,500,500,500,333,333,675,675,675,500,920,611,611,667,722,611,611,722,722,333,444,667,556,833,667,722,611,722,611,500,556,722,611,833,611,556,556,389,278,389,422,500,333,500,500,444,500,444,278,500,500,278,278,444,278,722,500,500,500,500,389,389,278,500,444,667,444,444,389,400,275,400,541,0,500,0,333,500,556,889,500,500,333,1000,500,333,944,0,556,0,0,333,333,556,556,350,500,889,333,980,389,333,667,0,389,444,250,389,500,500,500,500,275,500,333,760,276,500,675,333,760,333,400,675,300,300,333,500,523,250,333,300,310,500,750,750,750,500,611,611,611,611,611,611,889,667,611,611,611,611,333,333,333,333,722,667,722,722,722,722,722,675,722,722,722,722,722,556,611,500,500,500,500,500,500,500,667,444,444,444,444,444,278,278,278,278,500,500,500,500,500,500,500,675,500,500,500,500,500,444,500,444],"TIMESBI":[250,389,555,500,500,833,778,278,333,333,500,570,250,333,250,278,500,500,500,500,500,500,500,500,500,500,333,333,570,570,570,500,832,667,667,667,722,667,667,722,778,389,500,667,611,889,722,722,611,722,667,556,611,722,667,889,667,611,611,333,278,333,570,500,333,500,500,444,500,444,333,500,556,278,278,500,278,778,556,500,500,500,389,389,278,556,444,667,500,444,389,348,220,348,570,0,500,0,333,500,500,1000,500,500,333,1000,556,333,944,0,611,0,0,333,333,500,500,350,500,1000,333,1000,389,333,722,0,389,444,250,389,500,500,500,500,220,500,333,747,266,500,606,333,747,333,400,570,300,300,333,576,500,250,333,300,300,500,750,750,750,500,667,667,667,667,667,667,944,667,667,667,667,667,389,389,389,389,722,722,722,722,722,722,722,570,722,722,722,722,722,611,611,500,500,500,500,500,500,500,722,444,444,444,444,444,278,278,278,278,500,556,500,500,500,500,500,570,500,556,556,556,556,444,500,444]};
+const CP_EXTRA = {0x20AC:0x80,0x201A:0x82,0x0192:0x83,0x201E:0x84,0x2026:0x85,0x2020:0x86,0x2021:0x87,0x02C6:0x88,0x2030:0x89,
+  0x0160:0x8A,0x2039:0x8B,0x0152:0x8C,0x017D:0x8E,0x2018:0x91,0x2019:0x92,0x201C:0x93,0x201D:0x94,0x2022:0x95,0x2013:0x96,
+  0x2014:0x97,0x02DC:0x98,0x2122:0x99,0x0161:0x9A,0x203A:0x9B,0x0153:0x9C,0x017E:0x9E,0x0178:0x9F};
+const BASE_FONTS = {
+  H:['Helvetica','Helvetica-Bold','Helvetica-Oblique','Helvetica-BoldOblique'],
+  T:['Times-Roman','Times-Bold','Times-Italic','Times-BoldItalic'],
+  C:['Courier','Courier-Bold','Courier-Oblique','Courier-BoldOblique'] };
+const nf = n => String(Math.round(n*1000)/1000);
+const encAscii = s => new TextEncoder().encode(s);
+
+// Chuỗi -> mã WinAnsi; trả về null nếu có ký tự ngoài bảng (ví dụ chữ Hán) để vẽ bằng ảnh
+function toCp1252(str){
+  const out = [];
+  for (const ch of String(str)){
+    const u = ch.codePointAt(0);
+    if (u === 9) out.push(32);
+    else if (u >= 32 && u <= 126) out.push(u);
+    else if (u >= 0xA0 && u <= 0xFF) out.push(u);
+    else if (CP_EXTRA[u] !== undefined) out.push(CP_EXTRA[u]);
+    else return null;
+  }
+  return out;
+}
+function pickFont(font){
+  const n = String((font && font.name) || '').toLowerCase();
+  let fam = 'H';
+  if (/courier|consolas|monospace|lucida console/.test(n)) fam = 'C';
+  else if (/times|georgia|cambria|garamond|palatino|book antiqua/.test(n)) fam = 'T';
+  const k = (font && font.bold ? 1 : 0) + (font && font.italic ? 2 : 0);
+  let widths = null;
+  if (fam === 'H') widths = (k & 1) ? WIDTHS.HELVB : WIDTHS.HELV;
+  else if (fam === 'T') widths = [WIDTHS.TIMES, WIDTHS.TIMESB, WIDTHS.TIMESI, WIDTHS.TIMESBI][k];
+  return { res:'F'+fam+k, widths };
+}
+function pdfWidth(codes, fk, size){
+  let w = 0;
+  for (const c of codes) w += fk.widths ? (fk.widths[c-32] || 0) : 600;
+  return w * size / 1000;
+}
+async function deflate(u8){
+  if (typeof CompressionStream === 'undefined') throw new Error('This browser is too old (no CompressionStream). Please use a recent Chrome, Edge, Firefox or Safari.');
+  const cs = new CompressionStream('deflate');
+  const w = cs.writable.getWriter(); w.write(u8); w.close();
+  return new Uint8Array(await new Response(cs.readable).arrayBuffer());
+}
+
+class PdfDoc {
+  constructor(title){
+    this.bodies = [null]; this.pageIds = [];
+    this.catalogId = this.reserve(); this.pagesId = this.reserve();
+    const fonts = [];
+    for (const fam of Object.keys(BASE_FONTS)) BASE_FONTS[fam].forEach((name, k) => {
+      const id = this.add(`<< /Type /Font /Subtype /Type1 /BaseFont /${name} /Encoding /WinAnsiEncoding >>`);
+      fonts.push(`/F${fam}${k} ${id} 0 R`);
+    });
+    this.fontDict = fonts.join(' ');
+    const t = String(title||'').replace(/[^\x20-\x7E]/g,'').replace(/([()\\])/g,'\\$1');
+    this.infoId = this.add(`<< /Title (${t}) /Producer (BOM to PDF tool) >>`);
+  }
+  reserve(){ this.bodies.push(null); return this.bodies.length - 1; }
+  add(body){ const id = this.reserve(); this.bodies[id] = Array.isArray(body) ? body : [body]; return id; }
+  async addStream(dict, data){
+    const d = await deflate(data);
+    return this.add([`<< ${dict} /Filter /FlateDecode /Length ${d.length} >>\nstream\n`, d, '\nendstream']);
+  }
+  async addImage(w, h, rgb, alpha){
+    let sm = '';
+    if (alpha){
+      const mid = await this.addStream(`/Type /XObject /Subtype /Image /Width ${w} /Height ${h} /ColorSpace /DeviceGray /BitsPerComponent 8`, alpha);
+      sm = ` /SMask ${mid} 0 R`;
+    }
+    return this.addStream(`/Type /XObject /Subtype /Image /Width ${w} /Height ${h} /ColorSpace /DeviceRGB /BitsPerComponent 8${sm}`, rgb);
+  }
+  addJpegImage(w, h, bytes){
+    return this.add([`<< /Type /XObject /Subtype /Image /Width ${w} /Height ${h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${bytes.length} >>\nstream\n`, bytes, '\nendstream']);
+  }
+  async addPage(w, h, content, xobjIds){
+    const cid = await this.addStream('', encAscii(content));
+    const xo = xobjIds && xobjIds.length ? ` /XObject << ${xobjIds.map(i => `/Im${i} ${i} 0 R`).join(' ')} >>` : '';
+    const pid = this.add(`<< /Type /Page /Parent ${this.pagesId} 0 R /MediaBox [0 0 ${nf(w)} ${nf(h)}] /Resources << /Font << ${this.fontDict} >>${xo} >> /Contents ${cid} 0 R >>`);
+    this.pageIds.push(pid);
+  }
+  finish(){
+    this.bodies[this.catalogId] = [`<< /Type /Catalog /Pages ${this.pagesId} 0 R >>`];
+    this.bodies[this.pagesId] = [`<< /Type /Pages /Kids [${this.pageIds.map(i => i+' 0 R').join(' ')}] /Count ${this.pageIds.length} >>`];
+    const parts = [new Uint8Array([0x25,0x50,0x44,0x46,0x2D,0x31,0x2E,0x37,0x0A,0x25,0xE2,0xE3,0xCF,0xD3,0x0A])];
+    let pos = parts[0].length;
+    const push = p => { const u = typeof p === 'string' ? encAscii(p) : p; parts.push(u); pos += u.length; };
+    const offs = [];
+    for (let id = 1; id < this.bodies.length; id++){
+      offs[id] = pos;
+      push(`${id} 0 obj\n`);
+      this.bodies[id].forEach(push);
+      push('\nendobj\n');
+    }
+    const xref = pos;
+    let x = `xref\n0 ${this.bodies.length}\n0000000000 65535 f \n`;
+    for (let id = 1; id < this.bodies.length; id++) x += String(offs[id]).padStart(10,'0') + ' 00000 n \n';
+    push(x + `trailer\n<< /Size ${this.bodies.length} /Root ${this.catalogId} 0 R /Info ${this.infoId} 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
+    return new Blob(parts, { type:'application/pdf' });
+  }
+}
+
+function hexRGB(h){ const v = parseInt(h.slice(1), 16); return [(v>>16&255)/255, (v>>8&255)/255, (v&255)/255]; }
+function blendWhite(hex, a){
+  const [r,g,b] = hexRGB(hex).map(c => Math.round((c*a + (1-a))*255));
+  return '#' + [r,g,b].map(v => v.toString(16).padStart(2,'0')).join('');
+}
+// Painter: toạ độ vào là toạ độ sheet (gốc trên-trái, đơn vị pt), ra là toạ độ PDF (gốc dưới-trái)
+function makePainter(T){
+  const ops = [];
+  const X = x => T.tx + x*T.s, Y = y => T.ph - (T.ty + y*T.s);
+  const col = h => hexRGB(h).map(nf).join(' ');
+  return {
+    ops,
+    q(){ ops.push('q'); }, Q(){ ops.push('Q'); },
+    clipPage(x,y,w,h){ ops.push(`${nf(x)} ${nf(T.ph-y-h)} ${nf(w)} ${nf(h)} re W n`); },
+    clip(x,y,w,h){ ops.push(`${nf(X(x))} ${nf(Y(y+h))} ${nf(w*T.s)} ${nf(h*T.s)} re W n`); },
+    rect(x,y,w,h,color){ ops.push(`${col(color)} rg ${nf(X(x))} ${nf(Y(y+h))} ${nf(w*T.s)} ${nf(h*T.s)} re f`); },
+    line(x1,y1,x2,y2,color,lw,dash){
+      const d = dash && dash.length ? '[' + dash.map(v => nf(v*T.s)).join(' ') + '] 0 d' : '[] 0 d';
+      ops.push(`${col(color)} RG ${nf(lw*T.s)} w ${d} ${nf(X(x1))} ${nf(Y(y1))} m ${nf(X(x2))} ${nf(Y(y2))} l S`);
+    },
+    text(res, fs, tz, x, baseY, codes, color){
+      const hex = codes.map(c => c.toString(16).padStart(2,'0')).join('');
+      ops.push(`BT /${res} ${nf(fs*T.s)} Tf ${nf(tz)} Tz ${col(color)} rg ${nf(X(x))} ${nf(Y(baseY))} Td <${hex}> Tj ET`);
+    },
+    image(id,x,y,w,h){ ops.push(`q ${nf(w*T.s)} 0 0 ${nf(h*T.s)} ${nf(X(x))} ${nf(Y(y+h))} cm /Im${id} Do Q`); }
+  };
+}
+
+/* ---------- Dùng chung cho cả 2 chế độ ---------- */
+function borderEdges(plan, it){
+  const b = it.cell.border;
+  if (!b) return [];
+  const { x, y, w, h } = it.rect;
+  const rg = plan.mergeOf.get(it.r+','+it.c);   // viền nằm bên trong ô gộp thì không vẽ
+  const out = [];
+  if (!rg || it.r === rg.r1) out.push([b.top,    x,   y,   x+w, y  ]);
+  if (!rg || it.r === rg.r2) out.push([b.bottom, x,   y+h, x+w, y+h]);
+  if (!rg || it.c === rg.c1) out.push([b.left,   x,   y,   x,   y+h]);
+  if (!rg || it.c === rg.c2) out.push([b.right,  x+w, y,   x+w, y+h]);
+  return out.filter(e => e[0] && e[0].style);
+}
+function overflowExt(plan, it){
+  if (it.merged) return 0;
+  const { area, colW, slave, mergeMap, ws } = plan;
+  const row = ws.getRow(it.r);
+  let ext = 0;
+  for (let cc=it.c+1; cc<=area.c2; cc++){
+    const k = it.r+','+cc;
+    if (slave.has(k) || mergeMap.has(k)) break;
+    const val = unwrapValue(row.getCell(cc).value);
+    if (val !== '' && val !== null && val !== undefined) break;
+    ext += colW[cc];
+  }
+  return ext;
+}
+function collectItems(plan, pageIdx){
+  const rows = plan.pages[pageIdx];
+  const { area, colW, rowH, colX, rowY, s, mergeMap, slave, ws } = plan;
+  const offX = plan.centerH ? Math.max(0, (plan.availW - (colX[area.c2+1]-colX[area.c1])*s)/2) : 0;
+  const rowTop = new Map();
+  let y = 0;
+  for (const r of rows){ rowTop.set(r, y); y += rowH[r]; }
+  const items = [];
+  for (const r of rows){
+    if (rowH[r] === 0) continue;
+    const row = ws.getRow(r);
+    for (let c=area.c1; c<=area.c2; c++){
+      if (colW[c] === 0) continue;
+      const cell = row.getCell(c);
+      const key = r+','+c;
+      const rect = { x:colX[c]-colX[area.c1], y:rowTop.get(r), w:colW[c], h:rowH[r] };
+      const mg = mergeMap.get(key);
+      let mrect = null;
+      if (mg) mrect = { x:colX[mg.c1]-colX[area.c1], y:rowTop.get(r),
+                        w:colX[mg.c2+1]-colX[mg.c1], h:rowY[mg.r2+1]-rowY[mg.r1] };
+      items.push({ r, c, cell, rect, mrect, isSlave:slave.has(key), merged:!!mg });
+    }
+  }
+  return { items, rowTop, offX };
+}
+function hfLines(plan, pageNo, total, fileName){
+  const now = new Date();
+  const c = { page:pageNo, total, sheet:plan.name, file:fileName, date:now.toLocaleDateString(), time:now.toLocaleTimeString() };
+  const out = [];
+  const hf = plan.hf || {};
+  if (hf.oddFooter) out.push({ t:parseHF(hf.oddFooter, c), y:plan.ph - ((plan.margins.footer ?? 0.3)*72) });
+  if (hf.oddHeader) out.push({ t:parseHF(hf.oddHeader, c), y:(plan.margins.header ?? 0.3)*72 });
+  return out;
+}
+
+// Tính bố cục chữ của 1 ô (xuống dòng, căn lề, vị trí) mà chưa vẽ gì
+function layoutCellText(ctx, cell, rect, ext, theme, isMerged){
   const text = cellText(cell);
-  if (text === '') return;
+  if (text === '') return null;
   const font = cell.font || {};
   const al = cell.alignment || {};
   const size = font.size || 11;
@@ -708,26 +905,22 @@ function drawCellText(ctx, cell, rect, ext, theme, isMerged){
   if (h === 'fill' || h === 'justify' || h === 'distributed') h = 'left';
   if (h === 'centerContinuous') h = 'center';
   const vert = al.vertical === 'top' ? 'top' : (al.vertical === 'middle' || al.vertical === 'center') ? 'middle' : 'bottom';
-  const pad = 1.5;
-  const indent = (al.indent || 0) * 8;
+  const pad = 1.5, indent = (al.indent || 0) * 8;
+  const cssFont = px => `${font.italic?'italic ':''}${font.bold?'bold ':''}${px}px "${font.name||'Calibri'}", ${FONT_FALLBACK}`;
 
   let fs = size;
-  const setFont = px => {
-    ctx.font = `${font.italic?'italic ':''}${font.bold?'bold ':''}${px}px "${font.name||'Calibri'}", ${FONT_FALLBACK}`;
-  };
-  setFont(fs);
+  ctx.font = cssFont(fs);
   const innerW = rect.w - 2*pad - indent;
   if (al.shrinkToFit && !al.wrapText){
     const w = ctx.measureText(text).width;
-    if (w > innerW && innerW > 0){ fs = Math.max(4, fs*innerW/w); setFont(fs); }
+    if (w > innerW && innerW > 0){ fs = Math.max(4, fs*innerW/w); ctx.font = cssFont(fs); }
   }
-
-  let lines, clipRect = rect;
+  let lines, clip = rect;
   if (al.wrapText){
     lines = wrapLines(t => ctx.measureText(t).width, text, Math.max(innerW, 1));
   } else {
     lines = text.split(/\r?\n/);
-    if (h === 'left' && !isNum && !isMerged && ext > 0) clipRect = { x:rect.x, y:rect.y, w:rect.w+ext, h:rect.h };
+    if (h === 'left' && !isNum && !isMerged && ext > 0) clip = { x:rect.x, y:rect.y, w:rect.w+ext, h:rect.h };
   }
   const lh = fs * 1.22;
   const blockH = lines.length * lh;
@@ -735,28 +928,36 @@ function drawCellText(ctx, cell, rect, ext, theme, isMerged){
   if (vert === 'top') y0 = rect.y + 1;
   else if (vert === 'middle') y0 = rect.y + (rect.h - blockH)/2;
   else y0 = rect.y + rect.h - blockH - 1;
-
-  ctx.save();
-  ctx.beginPath(); ctx.rect(clipRect.x, clipRect.y, clipRect.w, clipRect.h); ctx.clip();
-  ctx.fillStyle = color;
-  ctx.textBaseline = 'middle';
   let x;
-  if (h === 'center'){ ctx.textAlign = 'center'; x = rect.x + rect.w/2; }
-  else if (h === 'right'){ ctx.textAlign = 'right'; x = rect.x + rect.w - pad; }
-  else { ctx.textAlign = 'left'; x = rect.x + pad + indent; }
-  lines.forEach((ln, i) => {
-    const ly = y0 + i*lh + lh/2 + fs*0.04;
-    ctx.fillText(ln, x, ly);
-    if (font.underline || font.strike){
+  if (h === 'center') x = rect.x + rect.w/2;
+  else if (h === 'right') x = rect.x + rect.w - pad;
+  else x = rect.x + pad + indent;
+  return { lines, fs, lh, y0, align:h, x, clip, color, font, css:cssFont(fs) };
+}
+
+function paintTextCanvas(ctx, L){
+  ctx.save();
+  ctx.beginPath(); ctx.rect(L.clip.x, L.clip.y, L.clip.w, L.clip.h); ctx.clip();
+  ctx.font = L.css;
+  ctx.fillStyle = L.color;
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = L.align;
+  L.lines.forEach((ln, i) => {
+    const ly = L.y0 + i*L.lh + L.lh/2 + L.fs*0.04;
+    ctx.fillText(ln, L.x, ly);
+    if (L.font.underline || L.font.strike){
       const w = ctx.measureText(ln).width;
-      const sx = h==='center' ? x - w/2 : (h==='right' ? x - w : x);
-      ctx.strokeStyle = color; ctx.lineWidth = Math.max(0.5, fs/16);
-      const yy = font.strike ? ly : ly + fs*0.42;
+      const sx = L.align==='center' ? L.x - w/2 : (L.align==='right' ? L.x - w : L.x);
+      ctx.strokeStyle = L.color; ctx.lineWidth = Math.max(0.5, L.fs/16);
+      const yy = L.font.strike ? ly : ly + L.fs*0.42;
       ctx.beginPath(); ctx.moveTo(sx, yy); ctx.lineTo(sx+w, yy); ctx.stroke();
     }
   });
   ctx.restore();
 }
+
+/* ---------- Chế độ "image": vẽ cả trang lên canvas, gắn vào PDF dạng JPEG ---------- */
+const IMG_R = 4.5, IMG_JPEG = 0.98, MAX_PIXELS = 16e6;
 
 function drawPage(canvas, plan, pageIdx, o){
   const { R, theme, imgCache, fileName, pageNo, total } = o;
@@ -766,43 +967,14 @@ function drawPage(canvas, plan, pageIdx, o){
   ctx.setTransform(R,0,0,R,0,0);
   ctx.fillStyle = '#FFFFFF';
   ctx.fillRect(0, 0, plan.pw, plan.ph);
-
-  const rows = plan.pages[pageIdx];
-  const { area, colW, rowH, colX, rowY, s, mergeMap, slave, ws } = plan;
-  const offX = plan.centerH ? Math.max(0, (plan.availW - (colX[area.c2+1]-colX[area.c1])*s)/2) : 0;
+  const { items, rowTop, offX } = collectItems(plan, pageIdx);
+  const { area, colX, s } = plan;
 
   ctx.save();
   ctx.beginPath(); ctx.rect(plan.ml, plan.mt, plan.availW, plan.availH); ctx.clip();
   ctx.translate(plan.ml + offX, plan.mt);
   ctx.scale(s, s);
-
-  const rowTop = new Map();
-  let y = 0;
-  for (const r of rows){ rowTop.set(r, y); y += rowH[r]; }
-
-  // thu thập ô cần vẽ
-  const items = [];
-  for (const r of rows){
-    if (rowH[r] === 0) continue;
-    const row = ws.getRow(r);
-    for (let c=area.c1; c<=area.c2; c++){
-      if (colW[c] === 0) continue;
-      const cell = row.getCell(c);
-      const key = r+','+c;
-      const rect = { x:colX[c]-colX[area.c1], y:rowTop.get(r), w:colW[c], h:rowH[r] };
-      const mg = mergeMap.get(key);
-      const isSlave = slave.has(key);
-      let mrect = null;
-      if (mg){
-        mrect = { x:colX[mg.c1]-colX[area.c1], y:rowTop.get(r),
-                  w:colX[mg.c2+1]-colX[mg.c1], h:rowY[mg.r2+1]-rowY[mg.r1] };
-      }
-      items.push({ r, c, cell, rect, mrect, isSlave, merged: !!mg });
-    }
-  }
-
-  // 1) nền
-  for (const it of items){
+  for (const it of items){                       // nền
     if (it.isSlave) continue;
     const f = cellFillColor(it.cell, theme);
     if (!f) continue;
@@ -812,56 +984,135 @@ function drawPage(canvas, plan, pageIdx, o){
     ctx.fillRect(rc.x, rc.y, rc.w, rc.h);
     ctx.restore();
   }
-  // 2) viền
-  for (const it of items){
-    const b = it.cell.border;
-    if (!b) continue;
-    const { x, y:yy, w, h } = it.rect;
-    const rg = plan.mergeOf.get(it.r+','+it.c);   // viền nằm bên trong ô gộp thì không vẽ
-    if (!rg || it.r === rg.r1) drawBorder(ctx, b.top,    x,   yy,   x+w, yy,   theme);
-    if (!rg || it.r === rg.r2) drawBorder(ctx, b.bottom, x,   yy+h, x+w, yy+h, theme);
-    if (!rg || it.c === rg.c1) drawBorder(ctx, b.left,   x,   yy,   x,   yy+h, theme);
-    if (!rg || it.c === rg.c2) drawBorder(ctx, b.right,  x+w, yy,   x+w, yy+h, theme);
-  }
-  // 3) chữ
-  for (const it of items){
+  for (const it of items)                        // viền
+    for (const [edge,x1,y1,x2,y2] of borderEdges(plan, it)) drawBorder(ctx, edge, x1, y1, x2, y2, theme);
+  for (const it of items){                       // chữ
     if (it.isSlave) continue;
-    let ext = 0;
-    if (!it.merged){
-      const row = ws.getRow(it.r);
-      for (let cc=it.c+1; cc<=area.c2; cc++){
-        const k = it.r+','+cc;
-        if (slave.has(k) || mergeMap.has(k)) break;
-        const val = unwrapValue(row.getCell(cc).value);
-        if (val !== '' && val !== null && val !== undefined) break;
-        ext += colW[cc];
-      }
-    }
-    drawCellText(ctx, it.cell, it.mrect || it.rect, ext, theme, it.merged);
+    const L = layoutCellText(ctx, it.cell, it.mrect || it.rect, overflowExt(plan, it), theme, it.merged);
+    if (L) paintTextCanvas(ctx, L);
   }
-  // 4) ảnh
-  for (const im of plan.images){
+  for (const im of plan.images){                 // ảnh
     const bmp = imgCache.get(im.id);
     const top = rowTop.get(im.row);
     if (!bmp || top === undefined) continue;
     ctx.drawImage(bmp, im.x - colX[area.c1], top + im.rowOff, im.w, im.h);
   }
   ctx.restore();
+  ctx.setTransform(R,0,0,R,0,0);
+  ctx.font = `9px ${FONT_FALLBACK}`; ctx.fillStyle = '#000'; ctx.textBaseline = 'middle';
+  for (const h of hfLines(plan, pageNo, total, fileName)){
+    ctx.textAlign = 'left';   if (h.t.L) ctx.fillText(h.t.L, plan.ml, h.y);
+    ctx.textAlign = 'center'; if (h.t.C) ctx.fillText(h.t.C, plan.pw/2, h.y);
+    ctx.textAlign = 'right';  if (h.t.R) ctx.fillText(h.t.R, plan.pw-plan.mr, h.y);
+  }
+}
 
-  // header / footer (không scale)
-  const now = new Date();
-  const hfCtx = { page:pageNo, total, sheet:plan.name, file:fileName,
-                  date:now.toLocaleDateString(), time:now.toLocaleTimeString() };
-  const drawHF = (str, yy) => {
-    const t = parseHF(str, hfCtx);
-    ctx.font = `9px ${FONT_FALLBACK}`; ctx.fillStyle = '#000'; ctx.textBaseline = 'middle';
-    ctx.textAlign = 'left';   if (t.L) ctx.fillText(t.L, plan.ml, yy);
-    ctx.textAlign = 'center'; if (t.C) ctx.fillText(t.C, plan.pw/2, yy);
-    ctx.textAlign = 'right';  if (t.R) ctx.fillText(t.R, plan.pw-plan.mr, yy);
-  };
-  const hf = plan.hf;
-  if (hf.oddFooter) drawHF(hf.oddFooter, plan.ph - (plan.margins.footer ?? 0.3)*72);
-  if (hf.oddHeader) drawHF(hf.oddHeader, (plan.margins.header ?? 0.3)*72);
+/* ---------- Chế độ "vector": chữ, viền, nền là vector thật ---------- */
+function paintTextVector(P, L, mctx){
+  const fk = pickFont(L.font);
+  const encLines = L.lines.map(ln => toCp1252(ln));
+  if (encLines.some(c => c === null)) return false;     // có ký tự ngoài Latin (chữ Hán...) -> dùng ảnh
+  P.q(); P.clip(L.clip.x, L.clip.y, L.clip.w, L.clip.h);
+  mctx.font = L.css;
+  L.lines.forEach((ln, i) => {
+    if (!ln) return;
+    const codes = encLines[i];
+    const natural = pdfWidth(codes, fk, L.fs);
+    const target = mctx.measureText(ln).width;           // độ rộng của font gốc (Calibri...) để giữ đúng xuống dòng/căn lề
+    let tz = natural > 0 ? target/natural*100 : 100;
+    tz = Math.min(115, Math.max(60, tz));
+    const w = natural * tz / 100;
+    let x = L.x;
+    if (L.align === 'center') x -= w/2; else if (L.align === 'right') x -= w;
+    const ly = L.y0 + i*L.lh + L.lh/2 + L.fs*0.04;
+    P.text(fk.res, L.fs, tz, x, ly + L.fs*0.34, codes, L.color);
+    if (L.font.underline) P.line(x, ly + L.fs*0.42, x+w, ly + L.fs*0.42, L.color, Math.max(0.5, L.fs/16));
+    if (L.font.strike)    P.line(x, ly, x+w, ly, L.color, Math.max(0.5, L.fs/16));
+  });
+  P.Q();
+  return true;
+}
+async function paintTextRaster(doc, P, L, T, used){
+  const w = L.clip.w, h = L.clip.h;
+  if (w <= 0 || h <= 0) return;
+  const k = Math.max(1, Math.min(8, Math.sqrt(4e6 / (w*h*T.s*T.s))));   // px trên mỗi pt của PDF
+  const pw = Math.max(1, Math.ceil(w*T.s*k)), ph = Math.max(1, Math.ceil(h*T.s*k));
+  const c = document.createElement('canvas'); c.width = pw; c.height = ph;
+  const ctx = c.getContext('2d');
+  ctx.setTransform(k*T.s, 0, 0, k*T.s, -L.clip.x*k*T.s, -L.clip.y*k*T.s);
+  paintTextCanvas(ctx, L);
+  const d = ctx.getImageData(0, 0, pw, ph).data;
+  const rgb = new Uint8Array(pw*ph*3), a = new Uint8Array(pw*ph);
+  for (let i=0, j=0, m=0; i<d.length; i+=4){ rgb[j++]=d[i]; rgb[j++]=d[i+1]; rgb[j++]=d[i+2]; a[m++]=d[i+3]; }
+  c.width = c.height = 0;
+  const id = await doc.addImage(pw, ph, rgb, a);
+  used.add(id);
+  P.image(id, L.clip.x, L.clip.y, pw/(k*T.s), ph/(k*T.s));
+}
+async function prepareImages(doc, cache){
+  const out = new Map();
+  for (const [id, bmp] of cache){
+    if (!bmp) continue;
+    let w = bmp.naturalWidth || bmp.width, h = bmp.naturalHeight || bmp.height;
+    const k = Math.min(1, Math.sqrt(12e6/(w*h)));
+    w = Math.max(1, Math.round(w*k)); h = Math.max(1, Math.round(h*k));
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const x = c.getContext('2d'); x.drawImage(bmp, 0, 0, w, h);
+    const d = x.getImageData(0, 0, w, h).data;
+    const rgb = new Uint8Array(w*h*3), a = new Uint8Array(w*h);
+    let hasA = false;
+    for (let i=0, j=0, m=0; i<d.length; i+=4){
+      rgb[j++]=d[i]; rgb[j++]=d[i+1]; rgb[j++]=d[i+2]; a[m]=d[i+3]; if (d[i+3] !== 255) hasA = true; m++;
+    }
+    c.width = c.height = 0;
+    out.set(id, await doc.addImage(w, h, rgb, hasA ? a : null));
+  }
+  return out;
+}
+async function paintPageVector(doc, plan, pageIdx, o){
+  const { theme, mctx, imgX, pageNo, total, fileName } = o;
+  const { items, rowTop, offX } = collectItems(plan, pageIdx);
+  const { area, colX } = plan;
+  const T = { s:plan.s, tx:plan.ml + offX, ty:plan.mt, ph:plan.ph };
+  const P = makePainter(T);
+  const used = new Set();
+  P.q(); P.clipPage(plan.ml, plan.mt, plan.availW, plan.availH);
+  for (const it of items){                       // nền
+    if (it.isSlave) continue;
+    const f = cellFillColor(it.cell, theme);
+    if (!f) continue;
+    const rc = it.mrect || it.rect;
+    P.rect(rc.x, rc.y, rc.w, rc.h, typeof f === 'string' ? f : blendWhite(f.c, f.alpha));
+  }
+  for (const it of items)                        // viền
+    for (const [edge,x1,y1,x2,y2] of borderEdges(plan, it))
+      P.line(x1, y1, x2, y2, resolveColor(edge.color, theme, '#000000'), BORDER_W[edge.style] || 0.75, BORDER_DASH[edge.style]);
+  for (const it of items){                       // chữ
+    if (it.isSlave) continue;
+    const L = layoutCellText(mctx, it.cell, it.mrect || it.rect, overflowExt(plan, it), theme, it.merged);
+    if (!L) continue;
+    if (!paintTextVector(P, L, mctx)) await paintTextRaster(doc, P, L, T, used);
+  }
+  for (const im of plan.images){                 // ảnh
+    const xid = imgX.get(im.id);
+    const top = rowTop.get(im.row);
+    if (!xid || top === undefined) continue;
+    P.image(xid, im.x - colX[area.c1], top + im.rowOff, im.w, im.h);
+    used.add(xid);
+  }
+  P.Q();
+  const H = makePainter({ s:1, tx:0, ty:0, ph:plan.ph });   // header / footer theo toạ độ trang
+  const hk = pickFont({ name:'Arial' });
+  for (const h of hfLines(plan, pageNo, total, fileName)){
+    for (const [key, side] of [['L','l'],['C','c'],['R','r']]){
+      const codes = h.t[key] ? toCp1252(h.t[key]) : null;
+      if (!codes || !codes.length) continue;
+      const w = pdfWidth(codes, hk, 9);
+      const x = side==='l' ? plan.ml : side==='c' ? plan.pw/2 - w/2 : plan.pw - plan.mr - w;
+      H.text(hk.res, 9, 100, x, h.y + 3, codes, '#000000');
+    }
+  }
+  await doc.addPage(plan.pw, plan.ph, P.ops.concat(H.ops).join('\n'), Array.from(used));
 }
 
 async function toBitmap(blob){
@@ -938,41 +1189,39 @@ function detectMeta(wb, fileName){
   return meta;
 }
 
-// Độ nét: R = số pixel trên mỗi pt của trang PDF (3 ≈ 216 dpi, 4.5 ≈ 324 dpi).
-// Mỗi trang bị giới hạn ~16 triệu pixel để không vượt giới hạn canvas của trình duyệt (Safari/iOS).
-const QUALITY = { standard:{ R:3, jpeg:0.95 }, high:{ R:4.5, jpeg:0.98 } };
-const MAX_PIXELS = 16e6;
-
 async function workbookToPdf(wb, o){
   const { onProgress } = o;
-  const preset = QUALITY[o.quality] || QUALITY.high;
+  const mode = o.mode === 'image' ? 'image' : 'vector';
   const theme = parseTheme(wb._themes && (wb._themes.theme1 || Object.values(wb._themes)[0]));
   const sheets = wb.worksheets.filter(ws => !ws.state || ws.state === 'visible');
   if (!sheets.length) throw new Error('The file has no visible sheets.');
   const plans = sheets.map(planSheet);
   const total = plans.reduce((a,p) => a + p.pages.length, 0);
   const imgCache = await loadImages(wb);
-  const { jsPDF } = window.jspdf;
-  let pdf = null, n = 0;
+  const doc = new PdfDoc((o.fileName || '').replace(/\.[^.]+$/,''));
   const canvas = document.createElement('canvas');
+  const mctx = document.createElement('canvas').getContext('2d');
+  const imgX = mode === 'vector' ? await prepareImages(doc, imgCache) : null;
+  let n = 0;
   for (let i=0;i<plans.length;i++){
     const plan = plans[i];
     for (let p=0;p<plan.pages.length;p++){
       n++;
       onProgress && onProgress(`Rendering sheet ${i+1}/${plans.length} (page ${n}/${total})`);
       await tick();
-      const R = Math.min(preset.R, Math.sqrt(MAX_PIXELS / (plan.pw * plan.ph)));
-      drawPage(canvas, plan, p, { R, theme, imgCache, fileName:o.fileName, pageNo:n, total });
-      const data = canvas.toDataURL('image/jpeg', preset.jpeg);
-      const orient = plan.pw > plan.ph ? 'l' : 'p';
-      const fmt = [Math.min(plan.pw,plan.ph), Math.max(plan.pw,plan.ph)];
-      if (!pdf) pdf = new jsPDF({ orientation:orient, unit:'pt', format:fmt, compress:true });
-      else pdf.addPage(fmt, orient);
-      pdf.addImage(data, 'JPEG', 0, 0, plan.pw, plan.ph, undefined, 'FAST');
+      if (mode === 'vector'){
+        await paintPageVector(doc, plan, p, { theme, mctx, imgX, pageNo:n, total, fileName:o.fileName });
+      } else {
+        const R = Math.min(IMG_R, Math.sqrt(MAX_PIXELS / (plan.pw * plan.ph)));
+        drawPage(canvas, plan, p, { R, theme, imgCache, fileName:o.fileName, pageNo:n, total });
+        const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', IMG_JPEG));
+        const id = doc.addJpegImage(canvas.width, canvas.height, new Uint8Array(await blob.arrayBuffer()));
+        await doc.addPage(plan.pw, plan.ph, `q ${nf(plan.pw)} 0 0 ${nf(plan.ph)} 0 0 cm /Im${id} Do Q`, [id]);
+      }
     }
   }
   canvas.width = canvas.height = 0;
-  return { blob: pdf.output('blob'), pages: total, sheets: plans.length };
+  return { blob: doc.finish(), pages: total, sheets: plans.length };
 }
 
 /* ============================================================
@@ -982,9 +1231,6 @@ const LIBS = [
   { name:'ExcelJS', ok:() => window.ExcelJS, urls:[
       'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js',
       'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js'] },
-  { name:'jsPDF', ok:() => window.jspdf && window.jspdf.jsPDF, urls:[
-      'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
-      'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js'] },
   { name:'JSZip', ok:() => window.JSZip, urls:[
       'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js',
       'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js'] }
@@ -1213,14 +1459,14 @@ async function convertAll(){
   if (S.busy) return;
   try { await ensureLibs(); } catch(e){ showError(e.message); return; }
   S.busy = true; updateButtons();
-  const q = $('quality').value;
+  const mode = $('mode').value;
   let okCount = 0;
   for (const f of S.files){
     if (f.error || !f.wb) continue;
     if (f.blob){ okCount++; continue; }
     try {
       setState(f, 'Processing…');
-      const res = await workbookToPdf(f.wb, { quality:q, fileName:f.file.name,
+      const res = await workbookToPdf(f.wb, { mode, fileName:f.file.name,
         onProgress: t => setState(f, t) });
       f.blob = res.blob;
       setState(f, `Done · ${res.sheets} ${res.sheets===1?'sheet':'sheets'}, ${res.pages} ${res.pages===1?'page':'pages'}`, 'ok');
