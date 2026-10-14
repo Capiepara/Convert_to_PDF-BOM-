@@ -55,6 +55,7 @@
     background:#fff;color:var(--ink);font:inherit;
   }
   input[type=text]{text-transform:uppercase}
+  input[aria-invalid=true]{border-color:var(--red);outline:1px solid var(--red)}
   input::placeholder{color:#97A3B3;text-transform:none}
   :is(input,select,button,.drop):focus-visible{outline:3px solid var(--focus);outline-offset:1px}
   .drop:focus-within{outline:3px solid var(--focus);outline-offset:1px}
@@ -154,7 +155,7 @@
       <div class="field">
         <label class="lbl" for="date">Date <span class="hint">(leave blank if the file has no date)</span></label>
         <div class="daterow">
-          <input type="date" id="date">
+          <input type="text" id="date" inputmode="numeric" placeholder="dd/mm/yyyy" maxlength="10" autocomplete="off" spellcheck="false">
           <button class="btn" type="button" id="today">Today</button>
           <button class="btn" type="button" id="clearDate">Clear</button>
         </div>
@@ -204,17 +205,29 @@ function escapeRe(s){ return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'); }
 function sanitizeName(s){
   return s.replace(/[\\\/:*?"<>|]/g,' ').replace(/[\u0000-\u001f]/g,'').replace(/\s+/g,' ').trim();
 }
-// MM.DD.YYYY (dấu "/" không được phép trong tên file nên dùng dấu chấm)
-function fmtDateMDY(iso){
+// Ngày nhập dạng dd/mm/yyyy (lưu nội bộ ISO yyyy-mm-dd). Trong TÊN FILE dùng DD.MM.YYYY vì dấu "/" không được phép.
+function parseDMY(str){
+  const m = /^\s*(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})\s*$/.exec(str || '');
+  if (!m) return '';
+  const d = +m[1], mo = +m[2], y = +m[3];
+  const dt = new Date(Date.UTC(y, mo-1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo-1 || dt.getUTCDate() !== d) return '';
+  return `${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+}
+function isoToSlash(iso){
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
-  return m ? `${m[2]}.${m[3]}.${m[1]}` : '';
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : '';
+}
+function fmtDateDMY(iso){
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : '';
 }
 function buildPdfName(season, stage, gender, model, iso){
   const head = [season, stage, 'BOM'].map(s => (s||'').trim()).filter(Boolean).join(' ');
   const mid  = [gender, model].map(s => (s||'').trim()).filter(Boolean).join(' ');
   let n = head;
   if (mid) n += ' – ' + mid;
-  const d = fmtDateMDY(iso);
+  const d = fmtDateDMY(iso);
   if (d) n += ' - ' + d;
   return sanitizeName(n.toUpperCase());
 }
@@ -1296,11 +1309,20 @@ function buildSettings(){
     const v = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,'');
     e.target.value = v; S.season = v; savePrefs(); refreshNames();
   });
-  $('date').addEventListener('input', e => { S.date = e.target.value; refreshNames(); });
+  $('date').addEventListener('input', e => {
+    // tự thêm dấu "/" khi gõ số: 06102026 -> 06/10/2026
+    const raw = e.target.value;
+    if (/^[\d\/.\-]*$/.test(raw) && !/[\/.\-]/.test(raw)){
+      const dg = raw.slice(0, 8);
+      e.target.value = dg.length > 4 ? `${dg.slice(0,2)}/${dg.slice(2,4)}/${dg.slice(4)}` : dg.length > 2 ? `${dg.slice(0,2)}/${dg.slice(2)}` : dg;
+    }
+    S.date = parseDMY(e.target.value);
+    refreshNames();
+  });
   $('today').addEventListener('click', () => {
     const d = new Date(), p = x => String(x).padStart(2,'0');
     S.date = `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
-    $('date').value = S.date; refreshNames();
+    $('date').value = isoToSlash(S.date); refreshNames();
   });
   $('clearDate').addEventListener('click', () => { S.date = ''; $('date').value = ''; refreshNames(); });
 }
@@ -1336,7 +1358,7 @@ function refreshNames(){
   } else {
     sample.classList.add('is-empty');
     const head = [S.season || 'FW27', S.stage || 'FLC', 'BOM'].join(' ');
-    sample.textContent = head + ' – W MODEL NAME' + (S.date ? ' - ' + fmtDateMDY(S.date) : '');
+    sample.textContent = head + ' – W MODEL NAME' + (S.date ? ' - ' + fmtDateDMY(S.date) : '');
     more.hidden = true;
   }
   for (const f of S.files){
@@ -1346,7 +1368,12 @@ function refreshNames(){
   }
   const miss = missingSettings();
   const al = $('alert');
-  if (S.files.length && miss.length){
+  const dateTxt = $('date').value.trim();
+  const dateBad = dateTxt !== '' && !S.date;
+  $('date').setAttribute('aria-invalid', dateBad ? 'true' : 'false');
+  if (dateBad){
+    al.hidden = false; al.textContent = 'Date must be a valid dd/mm/yyyy (for example 06/10/2026). Until then it is left out of the file name.';
+  } else if (S.files.length && miss.length){
     al.hidden = false; al.textContent = 'Choose ' + miss.join(' and ') + ' before downloading.';
   } else al.hidden = true;
   updateButtons();

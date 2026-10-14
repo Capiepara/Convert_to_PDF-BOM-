@@ -27,13 +27,13 @@ To update: replace `index.html`, then `git add . && git commit -m "..." && git p
 ## File name rule
 
 ```
-SEASON STAGE BOM – GENDER MODEL NAME - MM.DD.YYYY.pdf      (ALL CAPITAL LETTERS)
+SEASON STAGE BOM – GENDER MODEL NAME - DD.MM.YYYY.pdf      (ALL CAPITAL LETTERS)
 FW27 FLC BOM – W BRIDGELINE SHORTY WP.pdf                  (no date)
-SS28 FLC BOM – M SNAPLINE 6INCH WP CF - 10.06.2026.pdf     (with date)
+SS28 FLC BOM – M SNAPLINE 6INCH WP CF - 06.10.2026.pdf     (with date)
 ```
 
 - Separator before gender is an en dash `–`, separator before the date is a hyphen `-` (copied from the team's example image).
-- Date is `MM.DD.YYYY` with dots. The user asked for `mm/dd/yyyy`, but `/` is illegal in file names, so dots are used. Date is omitted entirely when empty.
+- The Date field is typed as `dd/mm/yyyy` (digits auto-format, `.` and `-` also accepted; invalid input is flagged and left out). In the file name it becomes `DD.MM.YYYY` with dots, because `/` is illegal in file names. Date is omitted entirely when empty.
 - Duplicate names in one batch get ` (2)`, ` (3)` appended.
 
 ---
@@ -44,7 +44,7 @@ SS28 FLC BOM – M SNAPLINE 6INCH WP CF - 10.06.2026.pdf     (with date)
 
 - User: project manager in footwear (Keen-style cost breakdown sheets), Vietnamese speaker, prefers direct professional replies, wants to be asked when a request is unclear, deploys by cloning/pushing to GitHub himself. Claude cannot create the repo, so it delivers `bom-pdf-tool.zip` and push commands.
 - Workflow before the tool: Excel to PDF manually, renaming by the team rule. The tool exists to batch this and remove manual renaming.
-- Original requirements: merge all sheets into one PDF; name by the rule (image: red rule text, example `FW27 FLC BOM – M CLASSIC ALPINE 2 - 8.5.2026.xlsx`); UI to add Excel files and pick Season / Stage (LR2-FLC-SMS-CFM); import many files at once. Later asks: auto-detect gender and model for every file, English UI, MM.DD.YYYY date, sharper text.
+- Original requirements: merge all sheets into one PDF; name by the rule (image: red rule text, example `FW27 FLC BOM – M CLASSIC ALPINE 2 - 8.5.2026.xlsx`); UI to add Excel files and pick Season / Stage (LR2-FLC-SMS-CFM); import many files at once. Later asks: auto-detect gender and model for every file, English UI, date format (first MM.DD.YYYY, now dd/mm/yyyy), sharper text.
 
 ## Architecture (all in `index.html`)
 
@@ -107,10 +107,11 @@ The date inside a file name is **not** auto-filled into the Date field (ambiguou
 3. Model name reconciliation between sheet and file name (`PLATE TOE` to `EVANSTON PLATE TOE`).
 4. Fixed gender/model detection returning the label text (merged-cell bug above).
 5. UI switched to English.
-6. Date format in the file name changed to `MM.DD.YYYY` (dots).
+6. Date format in the file name changed to `MM.DD.YYYY` (dots), later (item 10) to `DD.MM.YYYY`.
 7. Sharper output: R=3 / 4.5, JPEG 0.95 / 0.98, 16 MP cap, default High.
 8. Smarter gender/model parsing (`splitGender`, size range and category fallbacks, `6"` to `6INCH`).
 9. Blur fix: removed jsPDF, wrote an own PDF writer, added **Sharp vector** mode (default) and kept the image mode as "Exact fonts (image)". Quality select replaced by an Output select.
+10. Date: typed as `dd/mm/yyyy` (text field, not the browser date picker, whose display follows the OS locale); file name uses `DD.MM.YYYY`.
 
 ## Known limits and ideas
 
