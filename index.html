@@ -123,6 +123,7 @@
   .bar .grow{flex:1}
   .bar label{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600}
   .bar select{width:auto;height:42px}
+  .bar input[type=checkbox]{width:18px;height:18px;margin:0;accent-color:var(--ink)}
   .note{margin:18px 0 0;color:var(--ink-2);font-size:13px;max-width:78ch}
   .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
   @media (prefers-reduced-motion:no-preference){
@@ -176,6 +177,8 @@
       <button class="btn" type="button" id="zip" disabled>Download all (.zip)</button>
       <button class="btn" type="button" id="clear">Clear list</button>
       <span class="grow"></span>
+      <label title="Rows that are too short for their text are made taller in the PDF, and long text that would be cut off wraps onto more lines. The Excel file itself is not changed.">
+        <input type="checkbox" id="autofit" checked> Auto-fit row height</label>
       <label>Output
         <select id="mode">
           <option value="vector" selected>Sharp vector (recommended)</option>
@@ -185,7 +188,7 @@
     </div>
   </section>
 
-  <p class="note">PDFs are redrawn from the Excel content using each sheet's print area, paper size and fit-to-page scale. <b>Sharp vector</b> keeps text, borders and fills as real vector graphics (crisp at any zoom, text can be selected). Fonts are replaced by Arial/Times/Courier look-alikes squeezed to the original Calibri widths; text with Chinese or other non-Western characters, and pictures, are embedded as images. <b>Exact fonts (image)</b> reproduces your own fonts but as a picture, so it gets blurry when zoomed. Hidden sheets are skipped.</p>
+  <p class="note">PDFs are redrawn from the Excel content using each sheet's print area, paper size and fit-to-page scale. <b>Sharp vector</b> keeps text, borders and fills as real vector graphics (crisp at any zoom, text can be selected). Fonts are replaced by Arial/Times/Courier look-alikes squeezed to the original Calibri widths; text with Chinese or other non-Western characters, and pictures, are embedded as images. <b>Exact fonts (image)</b> reproduces your own fonts but as a picture, so it gets blurry when zoomed. Hidden sheets are skipped. <b>Auto-fit row height</b> (on by default) makes rows taller in the PDF when their text does not fit, including merged cells, so text is not cut off; the Excel file is not changed.</p>
 </div>
 
 <script>
@@ -571,7 +574,75 @@ function anchorOf(a){
   return null;
 }
 
-function planSheet(ws){
+// Đo chữ từng ô; dòng nào thấp hơn chữ cần thì tăng chiều cao (chỉ tăng, không giảm).
+// Chữ không bật Wrap mà dài hơn ô (và không tràn được sang ô trống bên cạnh) thì tự xuống dòng.
+// Trả về số dòng đã giãn.
+function autoFitRows(o){
+  const { ws, area, colW, rowH, mergeMap, slave, autoWrap, mctx } = o;
+  const rows = new Set();
+  for (let r=area.r1; r<=area.r2; r++) rows.add(r);
+  if (o.extraRows) for (let r=o.extraRows[0]; r<=o.extraRows[1]; r++) rows.add(r);
+  const changed = new Set();
+  const mergedNeeds = [];
+  const spanW = (c1, c2) => { let w = 0; for (let c=c1;c<=c2;c++) w += colW[c] || 0; return w; };
+
+  for (const r of rows){
+    if (!rowH[r]) continue;                       // dòng ẩn giữ nguyên
+    const row = ws.getRow(r);
+    for (let c=area.c1; c<=area.c2; c++){
+      if (!colW[c]) continue;
+      const key = r+','+c;
+      if (slave.has(key)) continue;
+      const cell = row.getCell(c);
+      const text = cellText(cell);
+      if (text === '') continue;
+      const v = unwrapValue(cell.value);
+      const isNum = typeof v === 'number' || v instanceof Date;
+      const al = cell.alignment || {};
+      if (al.textRotation) continue;
+      const font = cell.font || {};
+      const fs = font.size || 11;
+      mctx.font = `${font.italic?'italic ':''}${font.bold?'bold ':''}${fs}px "${font.name||'Calibri'}", ${FONT_FALLBACK}`;
+      const measure = t => mctx.measureText(t).width;
+      const mg = mergeMap.get(key);
+      const innerW = (mg ? spanW(mg.c1, mg.c2) : colW[c]) - 3 - (al.indent || 0) * 8;
+      if (innerW <= 0) continue;
+
+      let wrap = !!al.wrapText;
+      if (!wrap){
+        if (isNum || al.shrinkToFit) continue;      // số và "shrink to fit" thì không xuống dòng
+        let avail = innerW;
+        let h = al.horizontal;
+        if (!h || h === 'general') h = 'left';
+        if (h === 'left' && !mg){                 // chữ căn trái được tràn sang ô trống bên phải
+          for (let cc=c+1; cc<=area.c2; cc++){
+            const k = r+','+cc;
+            if (slave.has(k) || mergeMap.has(k)) break;
+            const nv = unwrapValue(row.getCell(cc).value);
+            if (nv !== '' && nv !== null && nv !== undefined) break;
+            avail += colW[cc] || 0;
+          }
+        }
+        const widest = Math.max(...text.split(/\r?\n/).map(measure));
+        if (widest > avail + 0.5){ wrap = true; autoWrap.add(key); }
+      }
+      const lines = wrap ? wrapLines(measure, text, innerW) : text.split(/\r?\n/);
+      if (lines.length < 2) continue;              // 1 dòng chữ thì chiều cao Excel đã đủ
+      const need = lines.length * fs * 1.22 + 3;
+      if (mg && mg.r2 > mg.r1) mergedNeeds.push({ rg:mg, need });
+      else if (need > rowH[r] + 0.5){ rowH[r] = need; changed.add(r); }
+    }
+  }
+  // ô gộp nhiều dòng: thiếu bao nhiêu thì cộng vào dòng hiện cuối cùng của vùng gộp
+  for (const { rg, need } of mergedNeeds){
+    let cur = 0, last = 0;
+    for (let r=rg.r1; r<=rg.r2; r++) if (rowH[r]){ cur += rowH[r]; last = r; }
+    if (last && need > cur + 0.5){ rowH[last] += need - cur; changed.add(last); }
+  }
+  return changed.size;
+}
+
+function planSheet(ws, opt){
   const ps = ws.pageSetup || {};
   const props = ws.properties || {};
   let [pw, ph] = PAPER[ps.paperSize] || PAPER[9];
@@ -609,9 +680,32 @@ function planSheet(ws){
     const row = ws.getRow(r);
     rowH[r] = row.hidden ? 0 : (row.height || drh);
   }
-  const colX = [0, 0], rowY = [0, 0];
+  const colX = [0, 0];
   for (let c=1;c<=NC;c++) colX[c+1] = colX[c] + colW[c];
-  for (let r=1;r<=NR;r++) rowY[r+1] = rowY[r] + rowH[r];
+  const cumY = h => { const y = [0, 0]; for (let r=1;r<=NR;r++) y[r+1] = y[r] + h[r]; return y; };
+  const rowY0 = cumY(rowH);                      // chiều cao gốc trong Excel (để giữ đúng kích thước ảnh)
+
+  // ô gộp
+  const mergeMap = new Map(), slave = new Set(), mergeOf = new Map();
+  const merges = (ws.model && ws.model.merges) || [];
+  for (const str of merges){
+    const rg = parseRange(str); if (!rg) continue;
+    mergeMap.set(rg.r1+','+rg.c1, rg);
+    for (let r=rg.r1;r<=rg.r2;r++) for (let c=rg.c1;c<=rg.c2;c++){
+      mergeOf.set(r+','+c, rg);
+      if (r!==rg.r1 || c!==rg.c1) slave.add(r+','+c);
+    }
+  }
+
+  // tự giãn dòng để chữ không bị cắt (Excel không tự giãn dòng có chiều cao cố định hay ô gộp)
+  const autoWrap = new Set();
+  let grown = 0;
+  if (opt && opt.autoFit && opt.mctx){
+    const titles0 = parseTitleRows(ps.printTitlesRow);
+    grown = autoFitRows({ ws, area, colW, rowH, mergeMap, slave, autoWrap, mctx:opt.mctx,
+                          extraRows: titles0 ? [titles0.from, titles0.to] : null });
+  }
+  const rowY = cumY(rowH);
 
   const W = colX[area.c2+1] - colX[area.c1];
   const H = rowY[area.r2+1] - rowY[area.r1];
@@ -654,7 +748,7 @@ function planSheet(ws){
     let w, h;
     if (im.br){
       w = colX[im.br.col+1] + im.br.colOff - x;
-      h = rowY[im.br.row+1] + im.br.rowOff - (rowY[row1] + im.tl.rowOff);
+      h = rowY0[im.br.row+1] + im.br.rowOff - (rowY0[row1] + im.tl.rowOff);   // dòng giãn thì ảnh không bị kéo méo
     } else if (im.ext){
       const k = im.ext.width > 4000 ? 1/EMU_PT : 0.75;
       w = im.ext.width*k; h = im.ext.height*k;
@@ -662,20 +756,8 @@ function planSheet(ws){
     images.push({ id:im.id, x, row:row1, rowOff:im.tl.rowOff, w, h });
   }
 
-  // ô gộp
-  const mergeMap = new Map(), slave = new Set(), mergeOf = new Map();
-  const merges = (ws.model && ws.model.merges) || [];
-  for (const str of merges){
-    const rg = parseRange(str); if (!rg) continue;
-    mergeMap.set(rg.r1+','+rg.c1, rg);
-    for (let r=rg.r1;r<=rg.r2;r++) for (let c=rg.c1;c<=rg.c2;c++){
-      mergeOf.set(r+','+c, rg);
-      if (r!==rg.r1 || c!==rg.c1) slave.add(r+','+c);
-    }
-  }
-
   return { ws, name: ws.name, pw, ph, ml, mr, mt, mb, availW, availH, area, colW, rowH, colX, rowY, s,
-           pages, images, mergeMap, slave, mergeOf,
+           pages, images, mergeMap, slave, mergeOf, autoWrap, grown,
            centerH: !!(ps.horizontalCentered), hf: ws.headerFooter || {}, margins: m };
 }
 
@@ -888,7 +970,7 @@ function collectItems(plan, pageIdx){
       let mrect = null;
       if (mg) mrect = { x:colX[mg.c1]-colX[area.c1], y:rowTop.get(r),
                         w:colX[mg.c2+1]-colX[mg.c1], h:rowY[mg.r2+1]-rowY[mg.r1] };
-      items.push({ r, c, cell, rect, mrect, isSlave:slave.has(key), merged:!!mg });
+      items.push({ r, c, cell, rect, mrect, isSlave:slave.has(key), merged:!!mg, wrap:!!(plan.autoWrap && plan.autoWrap.has(key)) });
     }
   }
   return { items, rowTop, offX };
@@ -904,7 +986,7 @@ function hfLines(plan, pageNo, total, fileName){
 }
 
 // Tính bố cục chữ của 1 ô (xuống dòng, căn lề, vị trí) mà chưa vẽ gì
-function layoutCellText(ctx, cell, rect, ext, theme, isMerged){
+function layoutCellText(ctx, cell, rect, ext, theme, isMerged, forceWrap){
   const text = cellText(cell);
   if (text === '') return null;
   const font = cell.font || {};
@@ -924,12 +1006,13 @@ function layoutCellText(ctx, cell, rect, ext, theme, isMerged){
   let fs = size;
   ctx.font = cssFont(fs);
   const innerW = rect.w - 2*pad - indent;
-  if (al.shrinkToFit && !al.wrapText){
+  const wrapOn = !!al.wrapText || !!forceWrap;
+  if (al.shrinkToFit && !wrapOn){
     const w = ctx.measureText(text).width;
     if (w > innerW && innerW > 0){ fs = Math.max(4, fs*innerW/w); ctx.font = cssFont(fs); }
   }
   let lines, clip = rect;
-  if (al.wrapText){
+  if (wrapOn){
     lines = wrapLines(t => ctx.measureText(t).width, text, Math.max(innerW, 1));
   } else {
     lines = text.split(/\r?\n/);
@@ -1001,7 +1084,7 @@ function drawPage(canvas, plan, pageIdx, o){
     for (const [edge,x1,y1,x2,y2] of borderEdges(plan, it)) drawBorder(ctx, edge, x1, y1, x2, y2, theme);
   for (const it of items){                       // chữ
     if (it.isSlave) continue;
-    const L = layoutCellText(ctx, it.cell, it.mrect || it.rect, overflowExt(plan, it), theme, it.merged);
+    const L = layoutCellText(ctx, it.cell, it.mrect || it.rect, overflowExt(plan, it), theme, it.merged, it.wrap);
     if (L) paintTextCanvas(ctx, L);
   }
   for (const im of plan.images){                 // ảnh
@@ -1102,7 +1185,7 @@ async function paintPageVector(doc, plan, pageIdx, o){
       P.line(x1, y1, x2, y2, resolveColor(edge.color, theme, '#000000'), BORDER_W[edge.style] || 0.75, BORDER_DASH[edge.style]);
   for (const it of items){                       // chữ
     if (it.isSlave) continue;
-    const L = layoutCellText(mctx, it.cell, it.mrect || it.rect, overflowExt(plan, it), theme, it.merged);
+    const L = layoutCellText(mctx, it.cell, it.mrect || it.rect, overflowExt(plan, it), theme, it.merged, it.wrap);
     if (!L) continue;
     if (!paintTextVector(P, L, mctx)) await paintTextRaster(doc, P, L, T, used);
   }
@@ -1208,12 +1291,14 @@ async function workbookToPdf(wb, o){
   const theme = parseTheme(wb._themes && (wb._themes.theme1 || Object.values(wb._themes)[0]));
   const sheets = wb.worksheets.filter(ws => !ws.state || ws.state === 'visible');
   if (!sheets.length) throw new Error('The file has no visible sheets.');
-  const plans = sheets.map(planSheet);
+  const mctx = document.createElement('canvas').getContext('2d');
+  const autoFit = o.autoFit !== false;
+  const plans = sheets.map(ws => planSheet(ws, { autoFit, mctx }));
   const total = plans.reduce((a,p) => a + p.pages.length, 0);
+  const grown = plans.reduce((a,p) => a + (p.grown || 0), 0);
   const imgCache = await loadImages(wb);
   const doc = new PdfDoc((o.fileName || '').replace(/\.[^.]+$/,''));
   const canvas = document.createElement('canvas');
-  const mctx = document.createElement('canvas').getContext('2d');
   const imgX = mode === 'vector' ? await prepareImages(doc, imgCache) : null;
   let n = 0;
   for (let i=0;i<plans.length;i++){
@@ -1234,7 +1319,7 @@ async function workbookToPdf(wb, o){
     }
   }
   canvas.width = canvas.height = 0;
-  return { blob: doc.finish(), pages: total, sheets: plans.length };
+  return { blob: doc.finish(), pages: total, sheets: plans.length, grown };
 }
 
 /* ============================================================
@@ -1276,7 +1361,7 @@ function ensureLibs(){
    4. Giao diện
    ============================================================ */
 const $ = id => document.getElementById(id);
-const S = { season:'', stage:'', date:'', files:[], busy:false };
+const S = { season:'', stage:'', date:'', files:[], busy:false, autoFit:true };
 let uid = 0;
 
 function loadPrefs(){
@@ -1284,10 +1369,11 @@ function loadPrefs(){
     const p = JSON.parse(localStorage.getItem('bom-pdf-prefs') || '{}');
     if (/^[A-Z]{2}\d{2}$/.test(p.season||'')) S.season = p.season;
     if (STAGES.includes(p.stage)) S.stage = p.stage;
+    if (p.autoFit === false) S.autoFit = false;
   } catch(e) {}
 }
 function savePrefs(){
-  try { localStorage.setItem('bom-pdf-prefs', JSON.stringify({ season:S.season, stage:S.stage })); } catch(e) {}
+  try { localStorage.setItem('bom-pdf-prefs', JSON.stringify({ season:S.season, stage:S.stage, autoFit:S.autoFit })); } catch(e) {}
 }
 
 function buildSettings(){
@@ -1386,6 +1472,8 @@ function updateButtons(){
   $('convert').disabled = S.busy || S.files.length === 0;
   $('zip').disabled = S.busy || !ok || ready.length === 0;
   $('clear').disabled = S.busy;
+  $('autofit').disabled = S.busy;
+  $('mode').disabled = S.busy;
   for (const f of S.files){
     f.dlBtn.hidden = !f.blob;
     f.dlBtn.disabled = !ok;
@@ -1493,10 +1581,11 @@ async function convertAll(){
     if (f.blob){ okCount++; continue; }
     try {
       setState(f, 'Processing…');
-      const res = await workbookToPdf(f.wb, { mode, fileName:f.file.name,
+      const res = await workbookToPdf(f.wb, { mode, autoFit:S.autoFit, fileName:f.file.name,
         onProgress: t => setState(f, t) });
       f.blob = res.blob;
-      setState(f, `Done · ${res.sheets} ${res.sheets===1?'sheet':'sheets'}, ${res.pages} ${res.pages===1?'page':'pages'}`, 'ok');
+      const fit = res.grown ? ` · ${res.grown} ${res.grown===1?'row':'rows'} auto-fitted` : '';
+      setState(f, `Done · ${res.sheets} ${res.sheets===1?'sheet':'sheets'}, ${res.pages} ${res.pages===1?'page':'pages'}${fit}`, 'ok');
       okCount++;
     } catch(e){
       console.error(e);
@@ -1536,6 +1625,15 @@ function init(){
   ['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
   drop.addEventListener('drop', e => addFiles(e.dataTransfer.files));
   $('convert').addEventListener('click', convertAll);
+  $('autofit').checked = S.autoFit;
+  // đổi tuỳ chọn thì PDF đã làm không còn đúng: xoá để bấm Convert lại
+  const resetOutputs = () => {
+    if (S.busy) return;
+    for (const f of S.files) if (f.blob){ f.blob = null; setState(f, 'Settings changed · convert again'); }
+    updateButtons();
+  };
+  $('autofit').addEventListener('change', e => { S.autoFit = e.target.checked; savePrefs(); resetOutputs(); });
+  $('mode').addEventListener('change', resetOutputs);
   $('zip').addEventListener('click', downloadZip);
   $('clear').addEventListener('click', () => {
     if (S.busy) return;

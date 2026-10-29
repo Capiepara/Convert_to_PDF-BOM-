@@ -23,6 +23,7 @@ To update: replace `index.html`, then `git add . && git commit -m "..." && git p
 2. Drag and drop or choose several `.xlsx` / `.xlsm` files. **Gender** and **Model name** are read from each file and can be edited per row.
 3. **Convert to PDF**, then download each file or **Download all (.zip)**.
 4. **Output**: *Sharp vector* (default, recommended): text, borders and fills are real vector graphics, crisp at any zoom, text is selectable, about 0.5 MB per file. *Exact fonts (image)*: each page is a picture (about 324 dpi, about 10 MB per file), keeps the original fonts but gets soft when zoomed.
+5. **Auto-fit row height** (ticked by default): rows that are too short for their text are made taller in the PDF, so text is not cut off. This also works for merged cells, which Excel itself never auto-fits. Long text that is not set to wrap, and would be cut by the next cell, wraps onto more lines. The Excel file is not changed. Untick it to get the exact Excel row heights. Changing this option or Output clears finished PDFs, so click **Convert to PDF** again.
 
 ## File name rule
 
@@ -57,6 +58,7 @@ SS28 FLC BOM – M SNAPLINE 6INCH WP CF - 06.10.2026.pdf     (with date)
 - Sections of the script: (1) pure helpers between `// <pure>` and `// </pure>` markers, with no DOM so they can be unit-tested in Node; (2) the drawing engine; (3) library loader; (4) UI.
 - Layout honours: print area, paper size (map `PAPER`, A3 = 8), orientation, margins, fit-to-page (1x1), print-title rows, header/footer codes (`&P`, `&N`, `&A`, `&F`, `&D`), merged cells, column widths / row heights, hidden rows/columns, fills, borders, fonts, number and date formats, theme colours with tint, embedded pictures (anchored to cells).
 - Hidden sheets are skipped.
+- **Auto-fit** (`autoFitRows`, called from `planSheet(ws, {autoFit, mctx})` before paging and fit-to-page scaling): for every visible cell in the print area and print-title rows, measures the text with the same canvas widths and `wrapLines` used for drawing, line height `fs * 1.22`, plus 3 pt. Rows only grow, never shrink. Single-line text is ignored (Excel heights already fit one line). A merged range spanning several rows adds the missing height to its last visible row. Non-wrap text that is wider than its cell (plus the empty cells it may overflow into, left-aligned only) is put in `plan.autoWrap` and drawn wrapped (`layoutCellText(..., forceWrap)`). Numbers, `shrinkToFit` and rotated text are left alone. Pictures keep their original size (`rowY0`, the Excel row positions), so they are not stretched when rows grow. `workbookToPdf` returns `grown` (rows changed), shown in the row status as "N rows auto-fitted".
 - Image-mode constants: `IMG_R = 4.5`, `IMG_JPEG = 0.98`, `MAX_PIXELS = 16e6` (Safari/iOS canvas limit). Earlier raster versions used R=2 then R=3/4.5 with jsPDF and still looked soft.
 
 ## The source files (what they look like)
@@ -96,6 +98,7 @@ The date inside a file name is **not** auto-filled into the Date field (ambiguou
 ## How it was tested (the sandbox resets, so rebuild if needed)
 
 - Unit tests in Node: extract the text between `// <pure>` and `// </pure>`, append `module.exports = {...}`, and assert name building, number/date formats, colours, ranges, header/footer parsing, text wrapping, gender/model parsing (17 cases in the last run, all passing).
+- Auto-fit test (2026-10-29, on the user's Windows machine): a test workbook made with openpyxl, then re-saved through Excel (ExcelJS fails with "reading 'anchors'" on pictures written by openpyxl), loaded with the real CDN ExcelJS in headless Edge; the harness page posts the PDF bytes to a small local Python HTTP server, and pypdfium2 renders them. Checked with auto-fit on and off, vector and image modes: fixed-height wrap rows, non-wrap text cut by a neighbour, a 2-row merged cell, picture not stretched.
 - Render test in headless Chromium (Playwright): convert the real workbook with openpyxl into a JSON mock of the ExcelJS worksheet API (cells, styles, merges, column widths, images), stub `window.ExcelJS` and `window.JSZip`, call `workbookToPdf` for both modes, write the returned PDF bytes to disk, then validate with `qpdf --check` / pikepdf, render with `pdftoppm` (compare 100 to 300 dpi crops), and extract text with pdfplumber. The mock must return the master value for merged slave cells. Last run: vector 4 pages 0.44 MB, image 4 pages 10.6 MB, both valid.
 - **Not tested:** the real CDN libraries (the sandbox has no network), and real Calibri metrics (the sandbox falls back to another font when measuring widths). Assumptions about ExcelJS to re-verify if something breaks: `ws.getImages()` returns objects with `imageId` and `range.tl/br` using `nativeCol/nativeRow/nativeColOff/nativeRowOff` (EMU); `wb.getImage(id)` returns `{extension, buffer}`; `ws.model.merges` is an array of range strings; `ws.pageSetup.printArea` / `printTitlesRow` / `fitToPage` / `margins`; `ws.headerFooter.oddFooter`; `wb._themes` for theme colours; `ws.getRow(r).getCell(c)` / `cell.font|fill|border|alignment|numFmt`.
 - The user has run the deployed version on real files (screenshots confirmed conversion, gender/model fields, naming and the quality complaint), which is the real validation.
@@ -112,10 +115,12 @@ The date inside a file name is **not** auto-filled into the Date field (ambiguou
 8. Smarter gender/model parsing (`splitGender`, size range and category fallbacks, `6"` to `6INCH`).
 9. Blur fix: removed jsPDF, wrote an own PDF writer, added **Sharp vector** mode (default) and kept the image mode as "Exact fonts (image)". Quality select replaced by an Output select.
 10. Date: typed as `dd/mm/yyyy` (text field, not the browser date picker, whose display follows the OS locale); file name uses `DD.MM.YYYY`.
+11. (v7.1.0, 2026-10-29) **Auto-fit row height**: text in rows with a fixed height or in merged cells was cut off in the PDF (user screenshot: row "Lace", colour `14-0951TCX GOLDEN ROD/18-1154TCX GLAZED GINGER` showed only the first line). Rows now grow to fit, long non-wrap text wraps, option on by default and remembered in `localStorage` (`autoFit`).
 
 ## Known limits and ideas
 
 - Vector mode: fonts are look-alikes (Arial/Times/Courier), not the original Calibri. Chinese or other non-Western text is an image. Image mode: text is a picture and files are about 10 MB. Wide sheets shrink under fit-to-page, so text can still look small. That needs a print-setup change in Excel, not a tool change.
+- Auto-fit makes rows taller, so a sheet set to fit on one page is scaled down a little more. Column widths are never changed (a wider column would shrink the whole page under fit-to-page). Widths are measured with the fonts on the user's computer; if Calibri is missing, wrapping can differ slightly from Excel.
 - `.xls` is not supported (ExcelJS reads only `.xlsx` / `.xlsm`).
 - Picture-in-cell and shape objects are not drawn; only floating pictures are.
 - Not yet done, possible next asks: auto-fill Stage and Date from file names; a Vietnamese/English toggle; merging all converted PDFs into one; a per-row Stage override; embedding a Calibri-compatible font (Carlito) for an exact look in vector mode.
