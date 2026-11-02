@@ -1,6 +1,9 @@
 # BOM Excel to PDF
 
-A browser-only tool that converts Excel BOM / cost-breakdown files to PDF, one PDF per file, with every visible sheet merged into that PDF and the file name built from the team's naming rule. Single file (`index.html`), no server, nothing is uploaded.
+A browser-only tool with two layouts (tabs at the top), single file (`index.html`), no server, nothing is uploaded:
+
+- **BOM Excel → PDF**: converts Excel BOM / cost-breakdown files to PDF, one PDF per file, with every visible sheet merged into that PDF and the file name built from the team's naming rule.
+- **Pattern → PDF** (password protected): turns Illustrator `.ai` pattern files (and `.pdf` files) into PDFs named `Model name-Gender Pattern DD.MM.YY`.
 
 Part 1 is the user guide. Part 2 ("Project notes") is a hand-off for whoever continues the work (Claude or a developer): read it first when resuming.
 
@@ -25,7 +28,7 @@ To update: replace `index.html`, then `git add . && git commit -m "..." && git p
 4. **Output**: *Sharp vector* (default, recommended): text, borders and fills are real vector graphics, crisp at any zoom, text is selectable, about 0.5 MB per file. *Exact fonts (image)*: each page is a picture (about 324 dpi, about 10 MB per file), keeps the original fonts but gets soft when zoomed.
 5. **Auto-fit row height** (ticked by default): rows that are too short for their text are made taller in the PDF, so text is not cut off. This also works for merged cells, which Excel itself never auto-fits. Long text that is not set to wrap, and would be cut by the next cell, wraps onto more lines. The Excel file is not changed. Untick it to get the exact Excel row heights. Changing this option or Output clears finished PDFs, so click **Convert to PDF** again.
 
-## File name rule
+## File name rule (BOM layout)
 
 ```
 SEASON STAGE BOM – GENDER MODEL NAME - DD.MM.YYYY.pdf      (ALL CAPITAL LETTERS)
@@ -36,6 +39,23 @@ SS28 FLC BOM – M SNAPLINE 6INCH WP CF - 06.10.2026.pdf     (with date)
 - Separator before gender is an en dash `–`, separator before the date is a hyphen `-` (copied from the team's example image).
 - The Date field is typed as `dd/mm/yyyy` (digits auto-format, `.` and `-` also accepted; invalid input is flagged and left out). In the file name it becomes `DD.MM.YYYY` with dots, because `/` is illegal in file names. Date is omitted entirely when empty.
 - Duplicate names in one batch get ` (2)`, ` (3)` appended.
+
+## Pattern → PDF layout
+
+1. Click the **Pattern → PDF** tab. A new user (new browser or PC) sees **Password needed**: type the password from Albert and click **Unlock**. The browser remembers it; **Lock** (top right) locks it again on that PC.
+2. **Pattern** is the default text for every file (`Shell Pattern`), change it for the whole batch or per file. **Date** is typed `dd/mm/yyyy` like the BOM layout; leave blank for no date.
+3. Drag and drop or choose several `.ai` / `.pdf` files. **Gender**, **Model name** and (if the file name contains it, e.g. `Lining pattern`) **Pattern** are read from the file name and can be edited per row. Model name keeps the capital/small letters as typed.
+4. Download each PDF or **Download all (.zip)**. There is no Convert button: each file is ready as soon as it is added.
+
+File name rule (from the team's note):
+
+```
+Model name-Gender Pattern DD.MM.YY.pdf
+Carver Zero-M Shell Pattern 15.07.26.pdf
+Carver Zero Shell Pattern 15.07.26.pdf          (no gender)
+```
+
+**Illustrator files** must be saved with **Create PDF Compatible File** ticked (Illustrator's default). Such an `.ai` file already contains a full PDF of the artwork, so the tool saves that PDF unchanged: vector, no quality loss, about the same size as the `.ai`. Files saved without that option, or very old `.ai` files (PostScript based), are refused with a message to re-save them in Illustrator.
 
 ---
 
@@ -60,6 +80,22 @@ SS28 FLC BOM – M SNAPLINE 6INCH WP CF - 06.10.2026.pdf     (with date)
 - Hidden sheets are skipped.
 - **Auto-fit** (`autoFitRows`, called from `planSheet(ws, {autoFit, mctx})` before paging and fit-to-page scaling): for every visible cell in the print area and print-title rows, measures the text with the same canvas widths and `wrapLines` used for drawing, line height `fs * 1.22`, plus 3 pt. Rows only grow, never shrink. Single-line text is ignored (Excel heights already fit one line). A merged range spanning several rows adds the missing height to its last visible row. Non-wrap text that is wider than its cell (plus the empty cells it may overflow into, left-aligned only) is put in `plan.autoWrap` and drawn wrapped (`layoutCellText(..., forceWrap)`). Numbers, `shrinkToFit` and rotated text are left alone. Pictures keep their original size (`rowY0`, the Excel row positions), so they are not stretched when rows grow. `workbookToPdf` returns `grown` (rows changed), shown in the row status as "N rows auto-fitted".
 - Image-mode constants: `IMG_R = 4.5`, `IMG_JPEG = 0.98`, `MAX_PIXELS = 16e6` (Safari/iOS canvas limit). Earlier raster versions used R=2 then R=3/4.5 with jsPDF and still looked soft.
+
+## Pattern layout (v7.2.0)
+
+- Tabs: `#tab-bom` / `#tab-pat` switch `#view-bom` / `#view-pat` (`showTab`), last tab remembered in `localStorage` `bom-pdf-tab`. The BOM layout's code is unchanged.
+- **Password lock** (asked for "new IP / new user cannot open the new layout without my approval"; GitHub Pages has no server so IPs cannot be checked; the user chose one shared password). The page stores only `PAT_PASS_HASH = sha256Hex(PAT_SALT + password)` (own small SHA-256 in the pure block, so it also works on `file://`). Unlocking saves the hash in `localStorage` `bom-pdf-pattern-key`; a new hash (password changed) relocks every PC. The password itself is not written in any file. It is a browser-side lock only: someone who edits the page can bypass it, and a short password can be guessed from the hash by a determined person. Files never leave the browser either way.
+- **Change the password**: open the tool, press F12, Console, run `sha256Hex(PAT_SALT + 'NewPassword')`, paste the result into `PAT_PASS_HASH` in `index.html`, deploy.
+- **.ai to PDF** (`pAddFiles`, `sniffPdf`, `aiWithoutPdfContent`): a PDF-compatible `.ai` starts with `%PDF-` and is a valid PDF, so the bytes are saved as-is with type `application/pdf`. `%!PS-Adobe` (old `.ai` / EPS) or no `%PDF-` in the first 1024 bytes is refused. An `.ai` saved without PDF content still starts with `%PDF-` but its page is only Illustrator's text "...saved without PDF Content..."; the tool inflates small Flate streams (up to 200 streams of 64 KB) and looks for that text (joining `(..)` string pieces of `TJ` arrays). Illustrator's private editing data stays in the file, which is why the PDF is as big as the `.ai`.
+- **Naming** (`buildPatternName`, `metaFromPatternName`, `fmtDateDMYY`): `Model-G Pattern DD.MM.YY`, gender upper case, model as typed, illegal characters removed by `sanitizeName`, duplicates get ` (2)`. File name parsing: trailing date removed, `<word> pattern` at the end becomes the row's Pattern, leading season/stage and dev codes removed, gender from `-M` / ` M` suffix, `M ` / `M-` / `M_` prefix, or `Men's` / `Women's` / `Kids` / `Youth`; `6"` becomes `6INCH`.
+- Default Pattern (`Shell Pattern`) is remembered in `bom-pdf-pattern-prefs`; changing it updates rows whose Pattern was not typed by hand or taken from the file name.
+
+| File name | Gender | Model | Pattern |
+|---|---|---|---|
+| `Carver Zero-M Shell pattern 15.7.26.ai` | M | Carver Zero | Shell Pattern |
+| `M_Carver Zero.ai` / `Carver Zero M.ai` | M | Carver Zero | (default) |
+| `FW27 W-Bridgeline Shorty WP lining PATTERN.ai` | W | Bridgeline Shorty WP | Lining Pattern |
+| `Maple Toe.ai` | (empty) | Maple Toe | (default) |
 
 ## The source files (what they look like)
 
@@ -97,6 +133,8 @@ The date inside a file name is **not** auto-filled into the Date field (ambiguou
 
 ## How it was tested (the sandbox resets, so rebuild if needed)
 
+- Pattern layout (2026-11-02, user's Windows PC, no Node): a local Python server serves `index.html` and a harness page that loads it in an iframe in headless Edge and posts results back. 60 checks: SHA-256 test vectors, password right/wrong, naming and file-name parsing table, tab/lock/unlock/remember/relock after password change, files made with Python (2-page Flate PDF saved as `.ai`, plain `.pdf`, `.ai` with the "saved without PDF Content" page, `%!PS-Adobe` `.ai`, `.txt`), download bytes identical to the input, zip names (real CDN JSZip), no side scroll at 390 px, BOM naming unchanged. **Not tested with real Illustrator files** (none were available): check multi-artboard files give one page per artboard.
+
 - Unit tests in Node: extract the text between `// <pure>` and `// </pure>`, append `module.exports = {...}`, and assert name building, number/date formats, colours, ranges, header/footer parsing, text wrapping, gender/model parsing (17 cases in the last run, all passing).
 - Auto-fit test (2026-10-29, on the user's Windows machine): a test workbook made with openpyxl, then re-saved through Excel (ExcelJS fails with "reading 'anchors'" on pictures written by openpyxl), loaded with the real CDN ExcelJS in headless Edge; the harness page posts the PDF bytes to a small local Python HTTP server, and pypdfium2 renders them. Checked with auto-fit on and off, vector and image modes: fixed-height wrap rows, non-wrap text cut by a neighbour, a 2-row merged cell, picture not stretched.
 - Render test in headless Chromium (Playwright): convert the real workbook with openpyxl into a JSON mock of the ExcelJS worksheet API (cells, styles, merges, column widths, images), stub `window.ExcelJS` and `window.JSZip`, call `workbookToPdf` for both modes, write the returned PDF bytes to disk, then validate with `qpdf --check` / pikepdf, render with `pdftoppm` (compare 100 to 300 dpi crops), and extract text with pdfplumber. The mock must return the master value for merged slave cells. Last run: vector 4 pages 0.44 MB, image 4 pages 10.6 MB, both valid.
@@ -116,6 +154,7 @@ The date inside a file name is **not** auto-filled into the Date field (ambiguou
 9. Blur fix: removed jsPDF, wrote an own PDF writer, added **Sharp vector** mode (default) and kept the image mode as "Exact fonts (image)". Quality select replaced by an Output select.
 10. Date: typed as `dd/mm/yyyy` (text field, not the browser date picker, whose display follows the OS locale); file name uses `DD.MM.YYYY`.
 11. (v7.1.0, 2026-10-29) **Auto-fit row height**: text in rows with a fixed height or in merged cells was cut off in the PDF (user screenshot: row "Lace", colour `14-0951TCX GOLDEN ROD/18-1154TCX GLAZED GINGER` showed only the first line). Rows now grow to fit, long non-wrap text wraps, option on by default and remembered in `localStorage` (`autoFit`).
+12. (v7.2.0, 2026-11-02) **Pattern → PDF** layout (second tab) for `.ai` / `.pdf` pattern files, named `Model name-Gender Pattern DD.MM.YY`, locked by a shared password.
 
 ## Known limits and ideas
 
