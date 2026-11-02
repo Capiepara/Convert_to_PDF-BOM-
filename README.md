@@ -42,7 +42,7 @@ SS28 FLC BOM – M SNAPLINE 6INCH WP CF - 06.10.2026.pdf     (with date)
 
 ## Pattern → PDF layout
 
-1. Click the **Pattern → PDF** tab. A new user (new browser or PC) sees **Password needed**: type the password from Albert and click **Unlock**. The browser remembers it; **Lock** (top right) locks it again on that PC.
+1. Click the **Pattern → PDF** tab. A new user (new browser or PC) sees **Password needed**: type the password and click **Unlock**. The browser remembers it; **Lock** (top right) locks it again on that PC.
 2. **Pattern** is the default text for every file (`Shell Pattern`), change it for the whole batch or per file. **Date** is typed `dd/mm/yyyy` like the BOM layout; leave blank for no date.
 3. Drag and drop or choose several `.ai` / `.pdf` files. **Gender**, **Model name** and (if the file name contains it, e.g. `Lining pattern`) **Pattern** are read from the file name and can be edited per row. Model name keeps the capital/small letters as typed.
 4. Download each PDF or **Download all (.zip)**. There is no Convert button: each file is ready as soon as it is added.
@@ -155,6 +155,7 @@ The date inside a file name is **not** auto-filled into the Date field (ambiguou
 10. Date: typed as `dd/mm/yyyy` (text field, not the browser date picker, whose display follows the OS locale); file name uses `DD.MM.YYYY`.
 11. (v7.1.0, 2026-10-29) **Auto-fit row height**: text in rows with a fixed height or in merged cells was cut off in the PDF (user screenshot: row "Lace", colour `14-0951TCX GOLDEN ROD/18-1154TCX GLAZED GINGER` showed only the first line). Rows now grow to fit, long non-wrap text wraps, option on by default and remembered in `localStorage` (`autoFit`).
 12. (v7.2.0, 2026-11-02) **Pattern → PDF** layout (second tab) for `.ai` / `.pdf` pattern files, named `Model name-Gender Pattern DD.MM.YY`, locked by a shared password.
+13. (v7.2.1, 2026-11-02) Lock screen text no longer names a person: "This layout is for approved users only." and "Wrong password. Please try again." (user asked to remove the name). Deployed.
 
 ## Known limits and ideas
 

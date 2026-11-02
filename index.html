@@ -242,7 +242,7 @@
 
     <section class="panel lock" id="patLock" aria-label="Password">
       <h2>Password needed</h2>
-      <p>This layout is for approved users only. Ask Albert for the password.</p>
+      <p>This layout is for approved users only.</p>
       <form id="patForm" autocomplete="off">
         <label class="sr" for="patPass">Password</label>
         <input type="password" id="patPass" placeholder="Password">
@@ -2049,7 +2049,7 @@ function initPattern(){
     e.preventDefault();
     const msg = $('patLockMsg');
     if (checkPatternPass($('patPass').value.trim())){ msg.hidden = true; setUnlocked(true); $('pPattern').focus(); }
-    else { msg.hidden = false; msg.textContent = 'Wrong password. Ask Albert for the current password.'; $('patPass').select(); }
+    else { msg.hidden = false; msg.textContent = 'Wrong password. Please try again.'; $('patPass').select(); }
   });
   $('patLockBtn').addEventListener('click', () => setUnlocked(false));
 
