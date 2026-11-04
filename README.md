@@ -3,7 +3,7 @@
 A browser-only tool with two layouts (tabs at the top), single file (`index.html`), no server, nothing is uploaded:
 
 - **BOM Excel → PDF**: converts Excel BOM / cost-breakdown files to PDF, one PDF per file, with every visible sheet merged into that PDF and the file name built from the team's naming rule.
-- **Pattern → PDF** (password protected): turns Illustrator `.ai` pattern files (and `.pdf` files) into PDFs named `Model name-Gender Pattern DD.MM.YY`.
+- **Pattern → PDF** (password protected): turns Illustrator `.ai` pattern files, `.pdf` files and CAD `.dxf` drawings into PDFs named `Model name-Gender Pattern DD.MM.YY`. DXF drawings are redrawn as vector lines at real size (1:1).
 
 Part 1 is the user guide. Part 2 ("Project notes") is a hand-off for whoever continues the work (Claude or a developer): read it first when resuming.
 
@@ -44,7 +44,7 @@ SS28 FLC BOM – M SNAPLINE 6INCH WP CF - 06.10.2026.pdf     (with date)
 
 1. Click the **Pattern → PDF** tab. A new user (new browser or PC) sees **Password needed**: type the password and click **Unlock**. The browser remembers it; **Lock** (top right) locks it again on that PC.
 2. **Pattern** is the default text for every file (`Shell Pattern`), change it for the whole batch or per file. **Date** is typed `dd/mm/yyyy` like the BOM layout; leave blank for no date.
-3. Drag and drop or choose several `.ai` / `.pdf` files. **Gender**, **Model name** and (if the file name contains it, e.g. `Lining pattern`) **Pattern** are read from the file name and can be edited per row. Model name keeps the capital/small letters as typed.
+3. Drag and drop or choose several `.ai` / `.pdf` / `.dxf` files. **Gender**, **Model name** and (if the file name contains it, e.g. `Lining pattern`) **Pattern** are read from the file name and can be edited per row. Model name keeps the capital/small letters as typed.
 4. Download each PDF or **Download all (.zip)**. There is no Convert button: each file is ready as soon as it is added.
 
 File name rule (from the team's note):
@@ -54,6 +54,14 @@ Model name-Gender Pattern DD.MM.YY.pdf
 Carver Zero-M Shell Pattern 15.07.26.pdf
 Carver Zero Shell Pattern 15.07.26.pdf          (no gender)
 ```
+
+**DXF files (CAD)**: exported as ASCII DXF from any CAD program (any AutoCAD version, R12 to 2018+). The tool redraws the drawing as sharp vector lines and saves it **at real size (1:1)**, so a ruler drawn in the file measures correctly. Print with **Actual size** (not "Fit"). Options under **DXF files** (remembered in the browser; changing one re-converts the DXF rows):
+
+- **Page**: *Auto* (default) uses A4, else A3, at 1:1 when the drawing fits with a 10 mm margin, otherwise a page the size of the drawing. *Drawing size* always uses a page the size of the drawing. *A4* / *A3* keep 1:1 if it fits and shrink it to fit if not; the row then says "shrunk to NN%" and the ruler no longer measures true.
+- **Lines**: *Black* (default, like a plotter in monochrome) or *CAD colours* (very light colours such as yellow are darkened so they show on white paper).
+- **Units**: *From file* reads the unit saved in the DXF; files that do not say (older DXF, like the team's pattern CAD) are taken as mm, and the row says "units assumed mm". Choose mm / cm / inch to override.
+
+Each row shows the drawing size in mm, the page and the scale, e.g. `DXF drawing · 394 × 227 mm · A3 landscape · 1:1`, and lists anything it could not draw (e.g. `not drawn: 2 HATCH`). Binary DXF files are refused with a message to export as ASCII DXF.
 
 **Illustrator files** must be saved with **Create PDF Compatible File** ticked (Illustrator's default). Such an `.ai` file already contains a full PDF of the artwork, so the tool saves that PDF unchanged: vector, no quality loss, about the same size as the `.ai`. Files saved without that option, or very old `.ai` files (PostScript based), are refused with a message to re-save them in Illustrator.
 
@@ -97,6 +105,18 @@ Carver Zero Shell Pattern 15.07.26.pdf          (no gender)
 | `FW27 W-Bridgeline Shorty WP lining PATTERN.ai` | W | Bridgeline Shorty WP | Lining Pattern |
 | `Maple Toe.ai` | (empty) | Maple Toe | (default) |
 
+## DXF layout (v7.3.0)
+
+- Asked 2026-11-04 ("we have more file .dxf, add function to convert to pdf"). Sample: `M_EVANSTON WEDEG CHELSEA WP.dxf` (project root), DXF R12 (`AC1009`) from a Taiwanese/Chinese pattern CAD, `$DWGCODEPAGE big5`, no `$INSUNITS`. It holds one block (big5 name) with 251 `POLYLINE`s, inserted once: red pattern lines, a yellow 393.6 × 226.8 mm frame, and text / logo / a 50 mm ruler already drawn as polylines (no TEXT entities). Units are mm (the ruler proves it), so unitless files default to mm.
+- Code (all in `index.html`): pure part in the `// <pure>` block after the pattern helpers: `dxfEncoding` (UTF-8 for `AC1021`+, else `$DWGCODEPAGE`: big5, ANSI_936 = gbk, ANSI_125x...), `parseDxf` (group-code pairs to header / layers / linetypes / blocks / entities; POLYLINE+VERTEX and INSERT+ATTRIB grouped), `dxfGeometry` (walks model space and nested blocks with 2D affine matrices, returns paths in drawing units, texts, dots, bounds, skipped types), `planDxfPage`, `aciColor`, `printableColor`, `dxfDash`, `dxfText` (MTEXT codes, `%%d` etc.). Drawing part before `pAddFiles`: `dxfToPdf` writes one page with the existing `PdfDoc` (paths, Helvetica text, CJK text as small alpha images via `dxfTextImage`), `dxfSummary`, `pRenderDxf`, `pRerenderDxf`.
+- Supported: LINE, LWPOLYLINE / POLYLINE (bulge arcs, closed, 3D polyline; meshes skipped), CIRCLE, ARC, ELLIPSE (as exact Bézier arcs), SPLINE (rational de Boor sampling, fit points if no control points), POINT, SOLID / TRACE (filled), 3DFACE (outline), LEADER, TEXT / ATTRIB (alignment, rotation, width factor, oblique, mirror flags), MTEXT (attachment, `\P` lines, formatting stripped), INSERT (scale, rotation, column/row arrays, nested up to 16), DIMENSION (its `*D` block). Colour BYLAYER / BYBLOCK / ACI / true colour (420); linetypes from the LTYPE table (dash lengths × `$LTSCALE` × entity scale); lineweight 370 if set, else 0.5 pt. Skipped: layers off / frozen / not plotted, `DEFPOINTS`, paper space (67=1), ATTDEF, VIEWPORT, XLINE / RAY. Not drawn and reported on the row: HATCH, IMAGE, 3D meshes, and any other type. Extrusion (0,0,-1) handled as an X mirror; tilted 3D extrusions are drawn as if flat.
+- Page: page size in mm from `planDxfPage(widthMm, heightMm, mode)`, drawing centred, scale `k = unit_mm × s × 72/25.4` pt per drawing unit; coordinates are converted to pt in JS (3 decimals = 0.0003 mm).
+- Text height in DXF is the capital height, so the PDF font size is `h / 0.718` (Helvetica cap height). Fonts are Helvetica look-alikes, not the CAD's SHX fonts.
+
+| File name | Gender | Model | PDF name (no date) |
+|---|---|---|---|
+| `M_EVANSTON WEDEG CHELSEA WP.dxf` | M | EVANSTON WEDEG CHELSEA WP | `EVANSTON WEDEG CHELSEA WP-M Shell Pattern.pdf` |
+
 ## The source files (what they look like)
 
 - Sheet title "Keen Cost Breakdown Sheet". Typical file: 2 to 4 visible sheets (one per colourway, for example `CSA WP W`, `Black Black`, `Dk Earth Black`, `Magnet Black`).
@@ -133,6 +153,8 @@ The date inside a file name is **not** auto-filled into the Date field (ambiguou
 
 ## How it was tested (the sandbox resets, so rebuild if needed)
 
+- DXF layout (2026-11-04, user's Windows PC, no Node): Python `http.server` serving `src/` and test files, a harness page loads `index.html` in an iframe in headless Edge (`--headless=new --dump-dom --virtual-time-budget`), unlocks by calling `setUnlocked(true)`, calls the pure functions and `pAddFiles`, and POSTs the PDFs back; pypdfium2 renders them to PNG. 45 checks passed: ACI colours, encodings, MTEXT stripping, dash arrays, page plans, file-name parsing, the real file (251 paths, bounds 393.57 × 226.83, A3 landscape 1:1, frame measured 393.6 mm on the 420 mm page), a synthetic mm file with every supported entity (bulges, mirrored arc, ellipse, spline, rotated block, array insert, dashed / dotted linetypes, hidden and frozen layers, HATCH reported), a UTF-8 R2007 inch file with Chinese text (50.8 × 25.4 mm), a 1200 mm drawing (drawing-size page), empty / non-DXF / binary DXF errors, colour and A4 options re-render, options remembered, no side scroll at 390 px. **Not tested** with DXF files from other CAD programs, HATCH-heavy files or very large files.
+
 - Pattern layout (2026-11-02, user's Windows PC, no Node): a local Python server serves `index.html` and a harness page that loads it in an iframe in headless Edge and posts results back. 60 checks: SHA-256 test vectors, password right/wrong, naming and file-name parsing table, tab/lock/unlock/remember/relock after password change, files made with Python (2-page Flate PDF saved as `.ai`, plain `.pdf`, `.ai` with the "saved without PDF Content" page, `%!PS-Adobe` `.ai`, `.txt`), download bytes identical to the input, zip names (real CDN JSZip), no side scroll at 390 px, BOM naming unchanged. **Not tested with real Illustrator files** (none were available): check multi-artboard files give one page per artboard.
 
 - Unit tests in Node: extract the text between `// <pure>` and `// </pure>`, append `module.exports = {...}`, and assert name building, number/date formats, colours, ranges, header/footer parsing, text wrapping, gender/model parsing (17 cases in the last run, all passing).
@@ -157,7 +179,11 @@ The date inside a file name is **not** auto-filled into the Date field (ambiguou
 12. (v7.2.0, 2026-11-02) **Pattern → PDF** layout (second tab) for `.ai` / `.pdf` pattern files, named `Model name-Gender Pattern DD.MM.YY`, locked by a shared password.
 13. (v7.2.1, 2026-11-02) Lock screen text no longer names a person: "This layout is for approved users only." and "Wrong password. Please try again." (user asked to remove the name). Deployed.
 
+14. (v7.3.0, 2026-11-04) **DXF → PDF** in the Pattern layout: CAD `.dxf` drawings redrawn as vector at real size (1:1), options Page / Lines / Units.
+
 ## Known limits and ideas
+
+- DXF: HATCH (filled areas) and raster IMAGE are not drawn; CAD SHX fonts become Helvetica; one PDF page per file (model space only, paper-space layouts ignored); binary DXF and DWG are not supported (export ASCII DXF).
 
 - Vector mode: fonts are look-alikes (Arial/Times/Courier), not the original Calibri. Chinese or other non-Western text is an image. Image mode: text is a picture and files are about 10 MB. Wide sheets shrink under fit-to-page, so text can still look small. That needs a print-setup change in Excel, not a tool change.
 - Auto-fit makes rows taller, so a sheet set to fit on one page is scaled down a little more. Column widths are never changed (a wider column would shrink the whole page under fit-to-page). Widths are measured with the fonts on the user's computer; if Calibri is missing, wrapping can differ slightly from Excel.

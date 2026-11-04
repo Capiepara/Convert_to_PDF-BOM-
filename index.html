@@ -158,6 +158,10 @@
   @media (max-width:820px){.psettings{grid-template-columns:1fr}}
   .files.pat li{grid-template-columns:minmax(0,1fr) 70px minmax(0,1fr) minmax(0,.8fr) auto}
   @media (max-width:760px){.files.pat li{grid-template-columns:70px 1fr}}
+  .dxfopts{grid-column:1 / -1}
+  .optrow{display:flex;flex-wrap:wrap;gap:10px 18px}
+  .optrow label{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;min-width:0;max-width:100%}
+  .optrow select{width:auto;max-width:100%;min-width:0}
   .pathead{display:flex;align-items:flex-start;gap:16px}
   .pathead h1{flex:1}
   @media (prefers-reduced-motion:no-preference){
@@ -238,7 +242,7 @@
       <h1>Pattern files to PDF</h1>
       <button class="btn small" type="button" id="patLockBtn" hidden>Lock</button>
     </div>
-    <p class="lede">Add Illustrator (.ai) or PDF pattern files. Each file is saved as a PDF named by the team's naming rule. Files are processed in your browser and are never uploaded.</p>
+    <p class="lede">Add Illustrator (.ai), PDF or CAD (.dxf) pattern files. Each file is saved as a PDF named by the team's naming rule. Files are processed in your browser and are never uploaded.</p>
 
     <section class="panel lock" id="patLock" aria-label="Password">
       <h2>Password needed</h2>
@@ -272,14 +276,38 @@
               <button class="btn" type="button" id="pClearDate">Clear</button>
             </div>
           </div>
+          <div class="field dxfopts">
+            <span class="lbl">DXF files <span class="hint">(CAD drawings: printed at real size, 1:1)</span></span>
+            <div class="optrow">
+              <label>Page
+                <select id="dxfPage">
+                  <option value="auto">Auto: A4 or A3 at 1:1, else drawing size</option>
+                  <option value="drawing">Drawing size (1:1)</option>
+                  <option value="a4">A4 (shrink if too big)</option>
+                  <option value="a3">A3 (shrink if too big)</option>
+                </select></label>
+              <label>Lines
+                <select id="dxfColor">
+                  <option value="black">Black</option>
+                  <option value="color">CAD colours</option>
+                </select></label>
+              <label>Units
+                <select id="dxfUnits">
+                  <option value="auto">From file (mm if not set)</option>
+                  <option value="mm">mm</option>
+                  <option value="cm">cm</option>
+                  <option value="in">inch</option>
+                </select></label>
+            </div>
+          </div>
         </div>
         <p class="alert" id="pAlert" role="status" hidden></p>
       </section>
 
       <section class="panel" aria-label="Pattern files">
         <label class="drop" id="pDrop">
-          <input type="file" id="pPicker" accept=".ai,.pdf" multiple>
-          <strong>Drag and drop .ai or .pdf files here, or click to choose</strong>
+          <input type="file" id="pPicker" accept=".ai,.pdf,.dxf" multiple>
+          <strong>Drag and drop .ai, .pdf or .dxf files here, or click to choose</strong>
           <span>You can choose several files at once. Illustrator files must be saved with "Create PDF Compatible File" ticked (Illustrator's default).</span>
         </label>
         <ul class="files pat" id="pFiles"></ul>
@@ -289,7 +317,7 @@
         </div>
       </section>
 
-      <p class="note">Illustrator saves a full PDF copy of the artwork inside every .ai file saved with "Create PDF Compatible File". The tool keeps that PDF exactly as Illustrator wrote it (vector, no quality loss) and only gives it the new name. The PDF is about the same size as the .ai file. If a file was saved without that option, re-save it in Illustrator with the option ticked. PDF files are kept as they are and only renamed.</p>
+      <p class="note">Illustrator saves a full PDF copy of the artwork inside every .ai file saved with "Create PDF Compatible File". The tool keeps that PDF exactly as Illustrator wrote it (vector, no quality loss) and only gives it the new name. The PDF is about the same size as the .ai file. If a file was saved without that option, re-save it in Illustrator with the option ticked. PDF files are kept as they are and only renamed. DXF files (ASCII, any AutoCAD version) are redrawn as sharp vector lines at real size (1:1), so a ruler on the drawing measures correctly when printed at "Actual size".</p>
     </div>
   </div>
 </div>
@@ -758,6 +786,389 @@ function wrapLines(measure, text, maxW){
     out.push(line.trimEnd());
   }
   return out;
+}
+
+/* ---------- Layout 2: DXF (CAD pattern) → PDF ---------- */
+// Đọc DXF dạng chữ (ASCII), vẽ lại thành đường vector trong PDF, đúng tỉ lệ 1:1.
+const DXF_UNITS = { 1:[25.4,'inch'], 2:[304.8,'feet'], 4:[1,'mm'], 5:[10,'cm'], 6:[1000,'m'], 9:[0.0254,'mil'], 10:[914.4,'yard'], 14:[100,'dm'] };
+const DXF_CP = { ansi_932:'shift_jis', ansi_936:'gbk', ansi_949:'euc-kr', ansi_950:'big5', big5:'big5', gb2312:'gbk', gbk:'gbk', dos932:'shift_jis' };
+// Bảng mã chữ trong file: R2007 trở lên là UTF-8, đời cũ theo $DWGCODEPAGE (vd "big5", "ANSI_936").
+function dxfEncoding(head){
+  if (/^﻿|^\xEF\xBB\xBF/.test(head)) return 'utf-8';
+  const ver = /\$ACADVER\s*\r?\n\s*1\s*\r?\n\s*(AC\d{4})/.exec(head);
+  if (ver && ver[1] >= 'AC1021') return 'utf-8';
+  const cp = /\$DWGCODEPAGE\s*\r?\n\s*3\s*\r?\n\s*([^\r\n]+)/.exec(head);
+  const k = cp ? cp[1].trim().toLowerCase() : '';
+  if (/^ansi_(125\d|874)$/.test(k)) return 'windows-' + k.slice(5);
+  return DXF_CP[k] || 'windows-1252';
+}
+function dxfSplit(pairs){   // cắt danh sách (mã, giá trị) thành từng đối tượng bắt đầu bằng mã 0
+  const out = []; let cur = null;
+  for (const p of pairs){
+    if (p[0] === 0){ cur = { type:p[1].toUpperCase(), g:[] }; out.push(cur); }
+    else if (cur) cur.g.push(p);
+  }
+  return out;
+}
+function dxfGroup(list){    // POLYLINE + VERTEX..SEQEND, INSERT + ATTRIB..SEQEND
+  const out = [];
+  for (let k = 0; k < list.length; k++){
+    const e = list[k];
+    if (e.type === 'POLYLINE'){
+      e.verts = [];
+      while (k+1 < list.length && list[k+1].type === 'VERTEX') e.verts.push(list[++k]);
+      if (list[k+1] && list[k+1].type === 'SEQEND') k++;
+    } else if (e.type === 'INSERT'){
+      e.attribs = [];
+      while (k+1 < list.length && list[k+1].type === 'ATTRIB') e.attribs.push(list[++k]);
+      if (e.attribs.length && list[k+1] && list[k+1].type === 'SEQEND') k++;
+    } else if (e.type === 'SEQEND' || e.type === 'VERTEX' || e.type === 'ATTRIB') continue;
+    out.push(e);
+  }
+  return out;
+}
+const dxfV = (e, c) => { for (const p of e.g) if (p[0] === c) return p[1]; return undefined; };
+const dxfN = (e, c, d) => { const v = dxfV(e, c); const n = parseFloat(v); return v === undefined || isNaN(n) ? d : n; };
+const dxfAll = (e, c) => e.g.filter(p => p[0] === c).map(p => parseFloat(p[1]));
+function dxfPts(e, cx, cy){   // các cặp điểm lặp lại (10/20, 11/21...)
+  const out = [];
+  for (const p of e.g){
+    if (p[0] === cx) out.push({ x:parseFloat(p[1]) || 0, y:0, b:0 });
+    else if (p[0] === cy && out.length) out[out.length-1].y = parseFloat(p[1]) || 0;
+    else if (p[0] === 42 && cx === 10 && out.length) out[out.length-1].b = parseFloat(p[1]) || 0;
+  }
+  return out;
+}
+function parseDxf(text){
+  if (/^AutoCAD Binary DXF/.test(text)) throw new Error('binary');
+  const L = text.replace(/^﻿/, '').split(/\r\n|\n|\r/);
+  const P = [];
+  for (let i = 0; i + 1 < L.length; i += 2){
+    const t = L[i].trim();
+    if (!/^-?\d+$/.test(t)){
+      if (t === '' && L.slice(i).every(x => !x.trim())) break;
+      throw new Error(`Not a valid DXF file (unexpected text on line ${i+1}).`);
+    }
+    const c = +t, raw = L[i+1];
+    P.push([c, (c === 1 || c === 3) ? raw.replace(/\s+$/, '') : raw.trim()]);
+    if (c === 0 && raw.trim() === 'EOF') break;
+  }
+  const dxf = { header:{}, layers:{}, ltypes:{}, blocks:{}, entities:[], sections:0 };
+  for (let i = 0; i < P.length; i++){
+    if (!(P[i][0] === 0 && P[i][1] === 'SECTION' && P[i+1] && P[i+1][0] === 2)) continue;
+    const name = P[i+1][1].toUpperCase();
+    let j = i + 2; while (j < P.length && !(P[j][0] === 0 && P[j][1] === 'ENDSEC')) j++;
+    const seg = P.slice(i + 2, j);
+    dxf.sections++;
+    if (name === 'HEADER'){
+      let v = null;
+      for (const [c, val] of seg){ if (c === 9) v = val; else if (v && !(v in dxf.header)) dxf.header[v] = val; }
+    } else if (name === 'TABLES'){
+      for (const r of dxfSplit(seg)){
+        const nm = String(dxfV(r, 2) || '').toUpperCase();
+        if (r.type === 'LAYER') dxf.layers[nm] = { color:dxfN(r,62,7), flags:dxfN(r,70,0), ltype:String(dxfV(r,6)||'CONTINUOUS').toUpperCase(),
+          lw:dxfN(r,370,-3), plot:dxfN(r,290,1), tc:dxfV(r,420) };
+        else if (r.type === 'LTYPE') dxf.ltypes[nm] = dxfAll(r, 49);
+      }
+    } else if (name === 'BLOCKS'){
+      let b = null;
+      for (const e of dxfSplit(seg)){
+        if (e.type === 'BLOCK'){ b = { name:String(dxfV(e,2)||''), bx:dxfN(e,10,0), by:dxfN(e,20,0), flags:dxfN(e,70,0), list:[] }; }
+        else if (e.type === 'ENDBLK'){ if (b && !(b.flags & 4)) dxf.blocks[b.name.toUpperCase()] = { bx:b.bx, by:b.by, ents:dxfGroup(b.list) }; b = null; }
+        else if (b) b.list.push(e);
+      }
+    } else if (name === 'ENTITIES') dxf.entities = dxfGroup(dxfSplit(seg));
+    i = j;
+  }
+  if (!dxf.sections) throw new Error('Not a valid DXF file (no SECTION found).');
+  return dxf;
+}
+// Units of the drawing: from $INSUNITS, otherwise assume mm (pattern CAD files are drawn in mm).
+function dxfUnits(dxf, choice){
+  const fixed = { mm:[1,'mm'], cm:[10,'cm'], in:[25.4,'inch'] };
+  if (fixed[choice]) return { mm:fixed[choice][0], name:fixed[choice][1], fromFile:false, forced:true };
+  const u = DXF_UNITS[parseInt(dxf.header.$INSUNITS, 10)];
+  return u ? { mm:u[0], name:u[1], fromFile:true } : { mm:1, name:'mm', fromFile:false };
+}
+// AutoCAD Color Index -> hex. 7 (trắng/đen) in ra màu đen trên giấy trắng.
+function aciColor(i){
+  const fixed = { 1:'FF0000', 2:'FFFF00', 3:'00FF00', 4:'00FFFF', 5:'0000FF', 6:'FF00FF', 7:'000000', 8:'808080', 9:'C0C0C0' };
+  i = Math.abs(i | 0);
+  if (fixed[i]) return fixed[i];
+  if (i >= 250 && i <= 255) return ['333333','505050','696969','828282','BEBEBE','FFFFFF'][i-250];
+  if (i < 10 || i > 249) return '000000';
+  const h = Math.floor((i - 10) / 10) * 15, k = i % 10;
+  const v = [1, .8, .6, .5, .3][k >> 1], s = (k & 1) ? .5 : 1;
+  const c = v*s, x = c*(1 - Math.abs((h/60) % 2 - 1)), m = v - c;
+  const rgb = h < 60 ? [c,x,0] : h < 120 ? [x,c,0] : h < 180 ? [0,c,x] : h < 240 ? [0,x,c] : h < 300 ? [x,0,c] : [c,0,x];
+  return rgb.map(t => Math.round((t + m) * 255).toString(16).padStart(2,'0')).join('').toUpperCase();
+}
+// Màu quá sáng (vàng, trắng) thì làm tối lại để in trên giấy trắng còn thấy.
+function printableColor(hex){
+  const r = parseInt(hex.slice(0,2),16), g = parseInt(hex.slice(2,4),16), b = parseInt(hex.slice(4,6),16);
+  const lum = (0.299*r + 0.587*g + 0.114*b) / 255;
+  if (lum <= 0.6) return hex;
+  const f = 0.6 / lum;
+  return [r,g,b].map(v => Math.round(v*f).toString(16).padStart(2,'0')).join('').toUpperCase();
+}
+// Dạng dash của linetype (mã 49, đơn vị bản vẽ) -> mảng dash dương cho PDF; null = nét liền
+function dxfDash(elems, scale){
+  if (!elems || !elems.length || elems.every(v => v === 0)) return null;
+  const out = [];
+  let on = true;   // phần tử đầu luôn là nét
+  for (const v of elems){
+    const isOn = v >= 0, len = Math.abs(v) * scale;
+    if (!out.length && !isOn) { out.push(0); on = false; }
+    if (out.length && isOn === on) out[out.length-1] += len;
+    else { out.push(len); on = isOn; }
+  }
+  if (out.length % 2) out.push(out.length > 1 ? 0 : out[0]);
+  return out.every(v => v === 0) ? null : out;
+}
+function dxfText(s, mtext){
+  s = String(s || '').replace(/\\U\+([0-9A-Fa-f]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+  if (mtext){
+    s = s.replace(/\\\\/g, '\u0001').replace(/\\\{/g, '\u0002').replace(/\\\}/g, '\u0003')
+      .replace(/\\P/g, '\n').replace(/\\~/g, ' ')
+      .replace(/\\S([^;]*?)[\^#\/]([^;]*);/g, '$1/$2')
+      .replace(/\\[ACcFfHQTWp][^;]*;/g, '').replace(/\\[LlOoKkNX]/g, '')
+      .replace(/[{}]/g, '')
+      .replace(/\u0001/g, '\\').replace(/\u0002/g, '{').replace(/\u0003/g, '}');
+  }
+  return s.replace(/%%[dD]/g, '°').replace(/%%[pP]/g, '±').replace(/%%[cC]/g, 'Ø')
+    .replace(/%%(\d{3})/g, (_, n) => String.fromCharCode(+n)).replace(/%%[uUoOkK]/g, '').replace(/%%%/g, '%');
+}
+
+const MUL = (A, B) => [A[0]*B[0]+A[2]*B[1], A[1]*B[0]+A[3]*B[1], A[0]*B[2]+A[2]*B[3], A[1]*B[2]+A[3]*B[3], A[0]*B[4]+A[2]*B[5]+A[4], A[1]*B[4]+A[3]*B[5]+A[5]];
+const M_ID = [1,0,0,1,0,0];
+const mTr = (x, y) => [1,0,0,1,x,y], mRot = a => [Math.cos(a), Math.sin(a), -Math.sin(a), Math.cos(a), 0, 0], mSc = (sx, sy) => [sx,0,0,sy,0,0];
+const mApply = (M, x, y) => [M[0]*x + M[2]*y + M[4], M[1]*x + M[3]*y + M[5]];
+const DEG = Math.PI / 180;
+// Hệ toạ độ đối tượng (OCS): chỉ xử lý trường hợp 2D, hướng đùn (0,0,-1) = lật trục X
+const dxfOcs = e => dxfN(e, 230, 1) < 0 ? [-1,0,0,1,0,0] : M_ID;
+
+// Đường cong: cung tròn -> Bézier bậc 3 (mỗi đoạn <= 90°), vẽ chính xác không cần chia nhỏ.
+function pathArc(pb, cx, cy, r, a0, sweep, move){
+  const n = Math.max(1, Math.ceil(Math.abs(sweep) / (Math.PI/2) - 1e-9));
+  const ph = sweep / n, k = 4/3 * Math.tan(ph/4);
+  let a = a0;
+  if (move) pb.M(cx + r*Math.cos(a), cy + r*Math.sin(a));
+  for (let i = 0; i < n; i++){
+    const b = a + ph, ca = Math.cos(a), sa = Math.sin(a), cb = Math.cos(b), sb = Math.sin(b);
+    pb.C(cx + r*(ca - k*sa), cy + r*(sa + k*ca), cx + r*(cb + k*sb), cy + r*(sb - k*cb), cx + r*cb, cy + r*sb);
+    a = b;
+  }
+}
+function pathBulge(pb, p, q, bulge){
+  const dx = q.x - p.x, dy = q.y - p.y, c = Math.hypot(dx, dy);
+  if (c < 1e-12) return;
+  const h = (c/2) * (1 - bulge*bulge) / (2*bulge), ux = dx/c, uy = dy/c;
+  const cx = (p.x + q.x)/2 - uy*h, cy = (p.y + q.y)/2 + ux*h;
+  pathArc(pb, cx, cy, Math.hypot(p.x - cx, p.y - cy), Math.atan2(p.y - cy, p.x - cx), 4*Math.atan(bulge), false);
+}
+function pathPoly(pb, pts, closed){
+  if (!pts.length) return;
+  pb.M(pts[0].x, pts[0].y);
+  const n = pts.length, segs = closed ? n : n - 1;
+  for (let i = 0; i < segs; i++){
+    const p = pts[i], q = pts[(i+1) % n];
+    if (Math.abs(p.b || 0) > 1e-9) pathBulge(pb, p, q, p.b); else pb.L(q.x, q.y);
+  }
+  if (closed) pb.Z();
+}
+// B-spline (có trọng số) -> các điểm, thuật toán de Boor
+function splinePoints(e){
+  const p = dxfN(e, 71, 3) | 0, U = dxfAll(e, 40), W = dxfAll(e, 41);
+  const C = dxfPts(e, 10, 20), F = dxfPts(e, 11, 21);
+  const n = C.length;
+  if (n >= 2 && p >= 1 && U.length >= n + p + 1){
+    const Pw = C.map((c, i) => { const w = W[i] > 0 ? W[i] : 1; return [c.x*w, c.y*w, w]; });
+    const t0 = U[p], t1 = U[n], steps = Math.min(4000, Math.max(16, n * 16)), out = [];
+    for (let s = 0; s <= steps; s++){
+      const t = s === steps ? t1 : t0 + (t1 - t0) * s / steps;
+      let k = p; while (k < n - 1 && t >= U[k+1]) k++;
+      const d = []; for (let j = 0; j <= p; j++) d.push(Pw[j + k - p].slice());
+      for (let r = 1; r <= p; r++) for (let j = p; j >= r; j--){
+        const i = j + k - p, den = U[i + p - r + 1] - U[i], a = den === 0 ? 0 : (t - U[i]) / den;
+        for (let m = 0; m < 3; m++) d[j][m] = (1 - a) * d[j-1][m] + a * d[j][m];
+      }
+      const q = d[p]; out.push({ x:q[0]/q[2], y:q[1]/q[2] });
+    }
+    return out;
+  }
+  return F.length >= 2 ? F : C;
+}
+
+// Duyệt bản vẽ (model space + block lồng nhau) -> danh sách đường / chữ / điểm theo toạ độ bản vẽ.
+function dxfGeometry(dxf){
+  const geo = { paths:[], texts:[], dots:[], skipped:{}, count:0,
+    bounds:{ x0:Infinity, y0:Infinity, x1:-Infinity, y1:-Infinity } };
+  const B = geo.bounds;
+  const grow = (x, y) => { if (!isFinite(x) || !isFinite(y)) return; if (x < B.x0) B.x0 = x; if (x > B.x1) B.x1 = x; if (y < B.y0) B.y0 = y; if (y > B.y1) B.y1 = y; };
+  const ltscale = parseFloat(dxf.header.$LTSCALE) || 1;
+  const skip = t => { geo.skipped[t] = (geo.skipped[t] || 0) + 1; };
+  const builder = (M, st, fill) => {
+    const cmds = [];
+    const pt = (x, y) => { const p = mApply(M, x, y); grow(p[0], p[1]); return p; };
+    return {
+      M(x, y){ cmds.push(['M', ...pt(x, y)]); }, L(x, y){ cmds.push(['L', ...pt(x, y)]); },
+      C(a, b, c, d, x, y){ cmds.push(['C', ...pt(a, b), ...pt(c, d), ...pt(x, y)]); }, Z(){ cmds.push(['Z']); },
+      done(){ if (cmds.length > 1){ geo.paths.push({ st, cmds, fill:!!fill }); geo.count++; } }
+    };
+  };
+  const style = (e, ctx) => {
+    const lname = String(dxfV(e, 8) || '0').toUpperCase();
+    const eff = lname === '0' && ctx.layer ? ctx.layer : lname;
+    const L = dxf.layers[eff];
+    if (eff === 'DEFPOINTS' || (L && (L.color < 0 || (L.flags & 1) || L.plot === 0))) return null;
+    let color;
+    const tc = dxfV(e, 420), ci = dxfN(e, 62, 256);
+    if (tc !== undefined) color = (parseInt(tc, 10) & 0xFFFFFF).toString(16).padStart(6, '0').toUpperCase();
+    else if (ci === 0) color = ctx.color || '000000';
+    else if (ci === 256) color = L ? (L.tc !== undefined ? (parseInt(L.tc, 10) & 0xFFFFFF).toString(16).padStart(6,'0').toUpperCase() : aciColor(L.color)) : (ctx.layer ? ctx.color || '000000' : '000000');
+    else color = aciColor(ci);
+    let lt = String(dxfV(e, 6) || 'BYLAYER').toUpperCase();
+    if (lt === 'BYLAYER') lt = L ? L.ltype : 'CONTINUOUS';
+    else if (lt === 'BYBLOCK') lt = ctx.ltype || 'CONTINUOUS';
+    let lw = dxfN(e, 370, -1);
+    if (lw === -1) lw = L ? L.lw : -3; else if (lw === -2) lw = ctx.lw === undefined ? -3 : ctx.lw;
+    const dash = dxfDash(dxf.ltypes[lt], ltscale * dxfN(e, 48, 1));
+    return { color, lt, lw, dash, layer:eff };
+  };
+  const addText = (e, ctx, st, kind) => {
+    const h = Math.abs(dxfN(e, 40, 2.5)) || 2.5;
+    let lines, F, item;
+    if (kind === 'mtext'){
+      let raw = ''; for (const [c, v] of e.g) if (c === 1 || c === 3) raw += v;
+      lines = dxfText(raw, true).split('\n');
+      const dx = dxfN(e, 11, NaN), dy = dxfN(e, 21, NaN);
+      const a = isFinite(dx) && isFinite(dy) && (dx || dy) ? Math.atan2(dy, dx) : dxfN(e, 50, 0) * DEG;
+      F = MUL(ctx.M, MUL(mTr(dxfN(e,10,0), dxfN(e,20,0)), mRot(a)));
+      item = { kind, att: dxfN(e, 71, 1) | 0, ls: h * 5/3 * (dxfN(e, 44, 1) || 1) };
+    } else {
+      lines = [dxfText(dxfV(e, 1), false)];
+      const ha = dxfN(e, 72, 0) | 0, va = dxfN(e, kind === 'attrib' ? 74 : 73, 0) | 0;
+      let ax = dxfN(e,10,0), ay = dxfN(e,20,0), a = dxfN(e, 50, 0) * DEG, fitW = 0;
+      const has2 = dxfV(e, 11) !== undefined, bx = dxfN(e,11,0), by = dxfN(e,21,0);
+      if ((ha === 3 || ha === 5) && has2){ a = Math.atan2(by - ay, bx - ax); fitW = Math.hypot(bx - ax, by - ay); }
+      else if ((ha || va) && has2){ ax = bx; ay = by; }
+      const wf = dxfN(e, 41, 1) || 1, obl = dxfN(e, 51, 0) * DEG, gen = dxfN(e, 71, 0);
+      F = MUL(ctx.M, MUL(dxfOcs(e), MUL(mTr(ax, ay), MUL(mRot(a), [wf, 0, Math.tan(obl), 1, 0, 0]))));
+      if (gen & 2) F = MUL(F, mSc(-1, 1));
+      if (gen & 4) F = MUL(F, mSc(1, -1));
+      item = { kind:'text', ha, va, fitW };
+    }
+    lines = lines.map(s => s.replace(/\s+$/, ''));
+    if (!lines.some(Boolean)) return;
+    Object.assign(item, { lines, F, h, st });
+    // khung gần đúng của chữ, chỉ để tính kích thước bản vẽ
+    const w = Math.max(...lines.map(s => s.length)) * h * 0.8, tot = h + (lines.length - 1) * (item.ls || h);
+    for (const [x, y] of [[-w, -tot], [w, -tot], [-w, h], [w, h], [0, 0]]){ const p = mApply(F, item.kind === 'text' && !item.ha ? Math.max(0, x) : x, y); grow(p[0], p[1]); }
+    geo.texts.push(item); geo.count++;
+  };
+  const walk = (ents, ctx) => {
+    for (const e of ents){
+      if (dxfN(e, 67, 0) === 1) continue;            // paper space
+      const st = style(e, ctx);
+      if (!st) continue;
+      const ocsM = MUL(ctx.M, dxfOcs(e));
+      switch (e.type){
+        case 'LINE': {
+          const pb = builder(ctx.M, st); pb.M(dxfN(e,10,0), dxfN(e,20,0)); pb.L(dxfN(e,11,0), dxfN(e,21,0)); pb.done(); break;
+        }
+        case 'LWPOLYLINE': {
+          const pb = builder(ocsM, st); pathPoly(pb, dxfPts(e, 10, 20), (dxfN(e,70,0) & 1) === 1); pb.done(); break;
+        }
+        case 'POLYLINE': {
+          const fl = dxfN(e, 70, 0);
+          if (fl & (16 | 64)){ skip('3D mesh'); break; }
+          const pts = (e.verts || []).filter(v => !(dxfN(v, 70, 0) & 16))
+            .map(v => ({ x:dxfN(v,10,0), y:dxfN(v,20,0), b:(fl & 8) ? 0 : dxfN(v,42,0) }));
+          const pb = builder((fl & 8) ? ctx.M : ocsM, st); pathPoly(pb, pts, (fl & 1) === 1); pb.done(); break;
+        }
+        case 'LEADER': {
+          const pb = builder(ctx.M, st); pathPoly(pb, dxfPts(e, 10, 20).map(p => ({ x:p.x, y:p.y })), false); pb.done(); break;
+        }
+        case 'CIRCLE': {
+          const pb = builder(ocsM, st); pathArc(pb, dxfN(e,10,0), dxfN(e,20,0), dxfN(e,40,0), 0, 2*Math.PI, true); pb.Z(); pb.done(); break;
+        }
+        case 'ARC': {
+          const a0 = dxfN(e,50,0) * DEG; let sw = dxfN(e,51,360) * DEG - a0;
+          while (sw <= 1e-9) sw += 2*Math.PI;
+          const pb = builder(ocsM, st); pathArc(pb, dxfN(e,10,0), dxfN(e,20,0), dxfN(e,40,0), a0, sw, true); pb.done(); break;
+        }
+        case 'ELLIPSE': {
+          const mx = dxfN(e,11,1), my = dxfN(e,21,0), ra = dxfN(e,40,1), s = dxfN(e,230,1) < 0 ? -1 : 1;
+          const E = [mx, my, -s*my*ra, s*mx*ra, dxfN(e,10,0), dxfN(e,20,0)];
+          const t0 = dxfN(e,41,0); let sw = dxfN(e,42,2*Math.PI) - t0;
+          while (sw <= 1e-9) sw += 2*Math.PI;
+          if (sw > 2*Math.PI) sw = 2*Math.PI;
+          const pb = builder(MUL(ctx.M, E), st); pathArc(pb, 0, 0, 1, t0, sw, true);
+          if (Math.abs(sw - 2*Math.PI) < 1e-6) pb.Z();
+          pb.done(); break;
+        }
+        case 'SPLINE': {
+          const pb = builder(ctx.M, st); pathPoly(pb, splinePoints(e), false); pb.done(); break;
+        }
+        case 'SOLID': case 'TRACE': case '3DFACE': {
+          const q = [10,11,12,13].map(c => ({ x:dxfN(e,c,NaN), y:dxfN(e,c+10,NaN) }));
+          if (!isFinite(q[3].x)) q[3] = q[2];
+          const fill = e.type !== '3DFACE';
+          const pts = fill ? [q[0], q[1], q[3], q[2]] : q;
+          const pb = builder(e.type === '3DFACE' ? ctx.M : ocsM, st, fill); pathPoly(pb, pts, true); pb.done(); break;
+        }
+        case 'POINT': {
+          const p = mApply(ctx.M, dxfN(e,10,0), dxfN(e,20,0)); grow(p[0], p[1]); geo.dots.push({ x:p[0], y:p[1], st }); geo.count++; break;
+        }
+        case 'TEXT': addText(e, ctx, st, 'text'); break;
+        case 'ATTRIB': if (!(dxfN(e,70,0) & 1)) addText(e, ctx, st, 'attrib'); break;
+        case 'MTEXT': addText(e, ctx, st, 'mtext'); break;
+        case 'INSERT': case 'DIMENSION': {
+          const blk = dxf.blocks[String(dxfV(e, 2) || '').toUpperCase()];
+          if (blk && ctx.depth < 16){
+            const child = { layer:st.layer, color:st.color, ltype:st.lt, lw:st.lw, depth:ctx.depth + 1 };
+            if (e.type === 'DIMENSION') walk(blk.ents, Object.assign(child, { M:MUL(ctx.M, mTr(-blk.bx, -blk.by)) }));
+            else {
+              const sx = dxfN(e,41,1), sy = dxfN(e,42,1), a = dxfN(e,50,0) * DEG;
+              const cols = Math.max(1, dxfN(e,70,1) | 0), rows = Math.max(1, dxfN(e,71,1) | 0);
+              const base = MUL(ocsM, MUL(mTr(dxfN(e,10,0), dxfN(e,20,0)), mRot(a)));
+              for (let r = 0; r < rows && r < 100; r++) for (let c = 0; c < cols && c < 100; c++)
+                walk(blk.ents, Object.assign({}, child, { M:MUL(base, MUL(mTr(c * dxfN(e,44,0), r * dxfN(e,45,0)), MUL(mSc(sx, sy), mTr(-blk.bx, -blk.by)))) }));
+            }
+          }
+          if (e.attribs) walk(e.attribs, ctx);
+          break;
+        }
+        case 'ATTDEF': case 'VIEWPORT': case 'XLINE': case 'RAY': case 'BLOCK': case 'ENDBLK': break;
+        default: skip(e.type);
+      }
+    }
+  };
+  walk(dxf.entities, { M:M_ID, layer:null, color:null, ltype:null, lw:undefined, depth:0 });
+  return geo;
+}
+// Khổ trang (mm). auto: A4 rồi A3 nếu vừa ở 1:1, không thì trang = kích thước bản vẽ.
+// a4 / a3: giữ 1:1 nếu vừa, to hơn thì thu nhỏ cho vừa. drawing: trang = bản vẽ + lề.
+const DXF_PAPER = { A4:[210,297], A3:[297,420] };
+function planDxfPage(bw, bh, mode){
+  const MG = 10, MAX = 5080;
+  bw = Math.max(bw, 0.01); bh = Math.max(bh, 0.01);
+  const orient = sz => bw > bh ? [sz[1], sz[0]] : sz.slice();
+  const fits = (W, H) => bw <= W - 2*MG + 1e-6 && bh <= H - 2*MG + 1e-6;
+  const out = (pw, ph, s, paper) => ({ pw, ph, s, paper, label: (paper ? paper + (pw > ph ? ' landscape' : ' portrait') : 'drawing-size page') });
+  if (mode === 'a4' || mode === 'a3'){
+    const nm = mode.toUpperCase(), [pw, ph] = orient(DXF_PAPER[nm]);
+    return out(pw, ph, Math.min(1, (pw - 2*MG) / bw, (ph - 2*MG) / bh), nm);
+  }
+  if (mode !== 'drawing'){
+    for (const nm of ['A4', 'A3']){
+      const [pw, ph] = orient(DXF_PAPER[nm]);
+      if (fits(pw, ph)) return out(pw, ph, 1, nm);
+      if (fits(ph, pw)) return out(ph, pw, 1, nm);
+    }
+  }
+  const s = Math.min(1, (MAX - 2*MG) / bw, (MAX - 2*MG) / bh);
+  return out(bw*s + 2*MG, bh*s + 2*MG, s, '');
 }
 // </pure>
 
@@ -1820,7 +2231,8 @@ async function downloadZip(){
 /* ============================================================
    5. Layout 2: Pattern (.ai / .pdf) → PDF, khoá bằng mật khẩu
    ============================================================ */
-const P = { unlocked:false, pattern:PAT_DEFAULT, date:'', files:[] };
+const P = { unlocked:false, pattern:PAT_DEFAULT, date:'', files:[], dxfPage:'auto', dxfColor:'black', dxfUnits:'auto' };
+const DXF_OPTS = { dxfPage:['auto','drawing','a4','a3'], dxfColor:['black','color'], dxfUnits:['auto','mm','cm','in'] };
 const KEY_TAB = 'bom-pdf-tab', KEY_UNLOCK = 'bom-pdf-pattern-key', KEY_PPREFS = 'bom-pdf-pattern-prefs';
 function lsGet(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }
 function lsSet(k, v){ try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch(e) {} }
@@ -1968,12 +2380,128 @@ async function deflateInflate(u8){
   return out;
 }
 
+/* ---------- DXF -> PDF (vector, đúng tỉ lệ) ---------- */
+const DXF_LW_PT = 0.5;   // độ dày nét (pt) khi file không ghi lineweight, khoảng 0.18 mm
+const dxfImgCache = new Map();
+// Chữ ngoài bảng WinAnsi (vd chữ Hán trong file big5) -> ảnh nhỏ có nền trong suốt
+async function dxfTextImage(doc, text, hex){
+  const key = hex + '|' + text;
+  if (dxfImgCache.has(key) && dxfImgCache.get(key).doc === doc) return dxfImgCache.get(key);
+  const PX = 96, font = `${PX}px Arial, "Microsoft JhengHei", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif`;
+  const c = document.createElement('canvas'), x = c.getContext('2d');
+  x.font = font;
+  const w = Math.max(1, Math.ceil(x.measureText(text).width) + 2), h = Math.ceil(PX * 1.3);
+  c.width = w; c.height = h;
+  x.font = font; x.fillStyle = '#' + hex; x.textBaseline = 'alphabetic';
+  x.fillText(text, 1, PX);
+  const d = x.getImageData(0, 0, w, h).data;
+  const [r, g, b] = hexRGB('#' + hex).map(v => Math.round(v * 255));
+  const rgb = new Uint8Array(w*h*3), a = new Uint8Array(w*h);
+  for (let i = 0; i < w*h; i++){ rgb[i*3] = r; rgb[i*3+1] = g; rgb[i*3+2] = b; a[i] = d[i*4+3]; }
+  const out = { doc, id: await doc.addImage(w, h, rgb, a), wEm: w / PX };
+  dxfImgCache.set(key, out);
+  return out;
+}
+async function dxfToPdf(dxf, o){
+  const geo = dxfGeometry(dxf);
+  if (!geo.count) throw new Error('Nothing to draw: the DXF has no drawing in model space, or every layer is turned off.');
+  const u = dxfUnits(dxf, o.units);
+  const b = geo.bounds, bw = (b.x1 - b.x0) * u.mm, bh = (b.y1 - b.y0) * u.mm;
+  const pl = planDxfPage(bw, bh, o.page);
+  const PT = 72 / 25.4, k = u.mm * pl.s * PT, pw = pl.pw * PT, ph = pl.ph * PT;
+  const Pg = [k, 0, 0, k, (pw - bw*pl.s*PT)/2 - b.x0*k, (ph - bh*pl.s*PT)/2 - b.y0*k];
+  const X = (x, y) => nf(Pg[0]*x + Pg[4]) + ' ' + nf(Pg[3]*y + Pg[5]);
+  const colorOf = st => o.color === 'color' ? printableColor(st.color) : '000000';
+  const rgb = hex => hexRGB('#' + hex).map(nf).join(' ');
+  const doc = new PdfDoc(o.title || '');
+  const ops = ['1 J 1 j'], xobj = [];
+  let cur = '';
+  for (const p of geo.paths){
+    const col = colorOf(p.st);
+    const lw = p.st.lw > 0 ? p.st.lw / 100 * PT : DXF_LW_PT;
+    const dash = p.st.dash ? '[' + p.st.dash.map(v => nf(v * k)).join(' ') + '] 0 d' : '[] 0 d';
+    const key = col + '|' + lw + '|' + dash;
+    if (key !== cur){ ops.push(`${rgb(col)} RG ${rgb(col)} rg ${nf(lw)} w ${dash}`); cur = key; }
+    const s = [];
+    for (const c of p.cmds){
+      if (c[0] === 'M') s.push(X(c[1], c[2]) + ' m');
+      else if (c[0] === 'L') s.push(X(c[1], c[2]) + ' l');
+      else if (c[0] === 'C') s.push(`${X(c[1], c[2])} ${X(c[3], c[4])} ${X(c[5], c[6])} c`);
+      else s.push('h');
+    }
+    s.push(p.fill ? 'f' : 'S');
+    ops.push(s.join(' '));
+  }
+  for (const d of geo.dots){
+    const col = colorOf(d.st);
+    ops.push(`${rgb(col)} RG 1.6 w [] 0 d ${X(d.x, d.y)} m ${X(d.x, d.y)} l S`); cur = '';
+  }
+  const fk = pickFont({ name:'Arial' });
+  for (const t of geo.texts){
+    const col = colorOf(t.st), em = t.h / 0.718;   // chiều cao chữ DXF = chiều cao chữ hoa
+    const Fm = MUL(Pg, t.F), n = t.lines.length;
+    let y0 = 0, al = 0;   // al: 0 trái, 1 giữa, 2 phải
+    if (t.kind === 'mtext'){
+      const row = Math.floor((t.att - 1) / 3), H = t.h + (n - 1) * t.ls;
+      al = (t.att - 1) % 3;
+      y0 = row === 0 ? -t.h : row === 1 ? H/2 - t.h : (n - 1) * t.ls;
+    } else {
+      al = t.ha === 1 || t.ha === 4 ? 1 : t.ha === 2 ? 2 : 0;
+      y0 = t.va === 1 ? 0.207 * em : (t.va === 2 || t.ha === 4) ? -t.h / 2 : t.va === 3 ? -t.h : 0;
+    }
+    for (let i = 0; i < n; i++){
+      const line = t.lines[i];
+      if (!line) continue;
+      const by = y0 - i * (t.ls || 0), codes = toCp1252(line);
+      if (codes){
+        const wNat = pdfWidth(codes, fk, em), sx = t.fitW > 0 && wNat > 0 ? t.fitW / wNat : 1, w = wNat * sx;
+        const Tm = MUL(Fm, [em * sx, 0, 0, em, al === 1 ? -w/2 : al === 2 ? -w : 0, by]);
+        const hx = codes.map(c => c.toString(16).padStart(2, '0')).join('');
+        ops.push(`BT /${fk.res} 1 Tf ${rgb(col)} rg ${Tm.map(nf).join(' ')} Tm <${hx}> Tj ET`);
+      } else {
+        const im = await dxfTextImage(doc, line, col);
+        const sx = t.fitW > 0 ? t.fitW / (im.wEm * em) : 1, w = im.wEm * em * sx;
+        const Tm = MUL(Fm, [w, 0, 0, 1.3 * em, al === 1 ? -w/2 : al === 2 ? -w : 0, by - 0.3 * em]);
+        ops.push(`q ${Tm.map(nf).join(' ')} cm /Im${im.id} Do Q`);
+        if (!xobj.includes(im.id)) xobj.push(im.id);
+      }
+    }
+    cur = '';
+  }
+  await doc.addPage(pw, ph, ops.join('\n'), xobj);
+  return { blob: doc.finish(), plan:pl, units:u, wMm:bw, hMm:bh, skipped:geo.skipped };
+}
+function dxfSummary(r){
+  const mm = v => v >= 100 ? Math.round(v) : Math.round(v * 10) / 10;
+  const scale = r.plan.s >= 0.9995 ? '1:1' : `shrunk to ${Math.round(r.plan.s * 1000) / 10}%`;
+  let s = `DXF drawing · ${mm(r.wMm)} × ${mm(r.hMm)} mm · ${r.plan.label} · ${scale}`;
+  if (!r.units.fromFile && !r.units.forced) s += ' · units assumed mm';
+  const sk = Object.entries(r.skipped);
+  if (sk.length) s += ' · not drawn: ' + sk.map(([t, n]) => `${n} ${t}`).join(', ');
+  return s;
+}
+async function pRenderDxf(f){
+  const r = await dxfToPdf(f.dxf, { page:P.dxfPage, color:P.dxfColor, units:P.dxfUnits, title:f.file.name.replace(/\.[^.]+$/, '') });
+  f.blob = r.blob;
+  f.metaEl.textContent = dxfSummary(r);
+  f.metaEl.title = r.plan.s < 0.9995 ? 'The drawing is bigger than the page, so it is not at real size. Use Page: "Auto" or "Drawing size" to keep 1:1.' : '';
+}
+async function pRerenderDxf(){
+  for (const f of P.files){
+    if (!f.dxf) continue;
+    setState(f, 'Converting…');
+    try { await pRenderDxf(f); setState(f, 'Ready', 'ok'); }
+    catch(e){ f.blob = null; setState(f, 'Cannot convert', 'err'); f.metaEl.textContent = e && e.message ? e.message : String(e); }
+  }
+  pRefresh();
+}
+
 async function pAddFiles(list){
   for (const file of Array.from(list)){
-    const isAi = /\.ai$/i.test(file.name), isPdf = /\.pdf$/i.test(file.name);
-    if (!isAi && !isPdf){
+    const isAi = /\.ai$/i.test(file.name), isPdf = /\.pdf$/i.test(file.name), isDxf = /\.dxf$/i.test(file.name);
+    if (!isAi && !isPdf && !isDxf){
       const al = $('pAlert'); al.hidden = false;
-      al.textContent = `"${file.name}" is not an .ai or .pdf file and was skipped.`;
+      al.textContent = `"${file.name}" is not an .ai, .pdf or .dxf file and was skipped.`;
       continue;
     }
     const meta = metaFromPatternName(file.name);
@@ -1985,6 +2513,19 @@ async function pAddFiles(list){
     pRefresh();
     try {
       const u8 = new Uint8Array(await file.arrayBuffer());
+      if (isDxf){
+        const head = new TextDecoder('latin1').decode(u8.subarray(0, Math.min(u8.length, 65536)));
+        if (/^AutoCAD Binary DXF/.test(head))
+          throw new Error('This is a binary DXF. Export it again from the CAD program as an ASCII (text) DXF, then add it again.');
+        let text;
+        try { text = new TextDecoder(dxfEncoding(head)).decode(u8); } catch(err){ text = new TextDecoder('windows-1252').decode(u8); }
+        setState(f, 'Converting…');
+        f.dxf = parseDxf(text);
+        await pRenderDxf(f);
+        setState(f, 'Ready', 'ok');
+        pRefresh();
+        continue;
+      }
       const sn = sniffPdf(u8);
       if (!sn.ok){
         throw new Error(isAi
@@ -2018,11 +2559,17 @@ function initPattern(){
   try {
     const p = JSON.parse(lsGet(KEY_PPREFS) || '{}');
     if (typeof p.pattern === 'string' && p.pattern.trim()) P.pattern = p.pattern;
+    for (const k of Object.keys(DXF_OPTS)) if (DXF_OPTS[k].includes(p[k])) P[k] = p[k];
   } catch(e) {}
+  const savePPrefs = () => lsSet(KEY_PPREFS, JSON.stringify({ pattern:P.pattern, dxfPage:P.dxfPage, dxfColor:P.dxfColor, dxfUnits:P.dxfUnits }));
+  for (const k of Object.keys(DXF_OPTS)){
+    const el = $(k); el.value = P[k];
+    el.addEventListener('change', () => { P[k] = el.value; savePPrefs(); pRerenderDxf(); });
+  }
   $('pPattern').value = P.pattern;
   $('pPattern').addEventListener('input', e => {
     P.pattern = e.target.value.trim() ? e.target.value : PAT_DEFAULT;
-    lsSet(KEY_PPREFS, JSON.stringify({ pattern:P.pattern }));
+    savePPrefs();
     for (const f of P.files) if (!f.patternEdited){ f.pattern = P.pattern; f.pEl.value = P.pattern; }
     pRefresh();
   });
