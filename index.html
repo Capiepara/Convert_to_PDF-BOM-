@@ -180,7 +180,7 @@
 
   <div id="view-bom" role="tabpanel" aria-labelledby="tab-bom">
   <h1>Convert BOM Excel to PDF</h1>
-  <p class="lede">Add several Excel files at once. All sheets of each file are merged into one PDF, named by the team's naming rule.</p>
+  <p class="lede">Add several Excel files at once. All sheets of each file are merged into one PDF, named by the team's naming rule. Choose <b>Output: Excel</b> to get renamed Excel files with auto-fitted row heights instead.</p>
 
   <section class="panel namebox" aria-label="PDF file name">
     <p class="rule">SEASON STAGE BOM – GENDER MODEL NAME – DATE.MONTH.YEAR (CAPITAL LETTER ONLY)</p>
@@ -223,18 +223,19 @@
       <button class="btn" type="button" id="zip" disabled>Download all (.zip)</button>
       <button class="btn" type="button" id="clear">Clear list</button>
       <span class="grow"></span>
-      <label title="Rows that are too short for their text are made taller in the PDF, and long text that would be cut off wraps onto more lines. The Excel file itself is not changed.">
+      <label title="Rows that are too short for their text are made taller, and long text that would be cut off wraps onto more lines. With PDF output your Excel file is not changed; with Excel output the new row heights are saved in the renamed copy.">
         <input type="checkbox" id="autofit" checked> Auto-fit row height</label>
       <label>Output
         <select id="mode">
-          <option value="vector" selected>Sharp vector (recommended)</option>
-          <option value="image">Exact fonts (image)</option>
+          <option value="vector" selected>PDF · Sharp vector (recommended)</option>
+          <option value="image">PDF · Exact fonts (image)</option>
+          <option value="excel">Excel · rename + auto-fit rows</option>
         </select>
       </label>
     </div>
   </section>
 
-  <p class="note">PDFs are redrawn from the Excel content using each sheet's print area, paper size and fit-to-page scale. <b>Sharp vector</b> keeps text, borders and fills as real vector graphics (crisp at any zoom, text can be selected). Fonts are replaced by Arial/Times/Courier look-alikes squeezed to the original Calibri widths; text with Chinese or other non-Western characters, and pictures, are embedded as images. <b>Exact fonts (image)</b> reproduces your own fonts but as a picture, so it gets blurry when zoomed. Hidden sheets are skipped. <b>Auto-fit row height</b> (on by default) makes rows taller in the PDF when their text does not fit, including merged cells, so text is not cut off; the Excel file is not changed.</p>
+  <p class="note">PDFs are redrawn from the Excel content using each sheet's print area, paper size and fit-to-page scale. <b>Sharp vector</b> keeps text, borders and fills as real vector graphics (crisp at any zoom, text can be selected). Fonts are replaced by Arial/Times/Courier look-alikes squeezed to the original Calibri widths; text with Chinese or other non-Western characters, and pictures, are embedded as images. <b>Exact fonts (image)</b> reproduces your own fonts but as a picture, so it gets blurry when zoomed. Hidden sheets are skipped. <b>Auto-fit row height</b> (on by default) makes rows taller in the PDF when their text does not fit, including merged cells, so text is not cut off; the Excel file is not changed. <b>Excel · rename + auto-fit rows</b> gives back a copy of each Excel file with the same naming rule (.xlsx or .xlsm). Only row heights and "Wrap text" on cells that need it are changed; formulas, pictures, formatting and every sheet stay as they are. Untick Auto-fit to only rename.</p>
   </div>
 
   <div id="view-pat" role="tabpanel" aria-labelledby="tab-pat" hidden>
@@ -1170,6 +1171,135 @@ function planDxfPage(bw, bh, mode){
   const s = Math.min(1, (MAX - 2*MG) / bw, (MAX - 2*MG) / bh);
   return out(bw*s + 2*MG, bh*s + 2*MG, s, '');
 }
+
+/* ---- Excel → Excel: sửa thẳng XML trong file .xlsx (giữ nguyên mọi thứ khác) ---- */
+// Hệ số dòng chữ cho file Excel: Excel cao dòng hơn PDF (Calibri 11 = 15 pt/dòng), nên dùng 1.32 thay vì 1.22.
+const XL_LINE_K = 1.32, XL_WRAP_K = 0.96, XL_MAX_HT = 409.5;
+function numToCol(n){ let s = ''; while (n > 0){ const m = (n-1) % 26; s = String.fromCharCode(65+m) + s; n = (n-1-m) / 26; } return s; }
+function xmlUnescape(s){ return String(s).replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;/g,"'").replace(/&#(x?)([0-9a-f]+);/gi, (m,x,d) => String.fromCodePoint(parseInt(d, x?16:10))).replace(/&amp;/g,'&'); }
+function xmlAttr(attrs, name){
+  const m = new RegExp(`\\s${escapeRe(name)}\\s*=\\s*(["'])([\\s\\S]*?)\\1`).exec(attrs);
+  return m ? xmlUnescape(m[2]) : null;
+}
+function setXmlAttr(attrs, name, val){
+  const re = new RegExp(`(\\s${escapeRe(name)}\\s*=\\s*)(["'])[\\s\\S]*?\\2`);
+  return re.test(attrs) ? attrs.replace(re, `$1"${val}"`) : attrs + ` ${name}="${val}"`;
+}
+// Chiều cao dòng Excel: làm tròn lên bội số 0.75 pt (1 pixel), tối đa 409.5 pt.
+function xlRowHeight(h){ return Math.min(XL_MAX_HT, Math.ceil(h / 0.75 - 1e-6) * 0.75); }
+function fmtHt(h){ return String(+xlRowHeight(h).toFixed(2)); }
+function relTarget(baseDir, target){   // "worksheets/sheet1.xml" so với "xl/" -> "xl/worksheets/sheet1.xml"
+  if (target.startsWith('/')) return target.slice(1);
+  const parts = (baseDir ? baseDir.split('/') : []).filter(Boolean);
+  for (const p of target.split('/')){
+    if (p === '..') parts.pop(); else if (p && p !== '.') parts.push(p);
+  }
+  return parts.join('/');
+}
+// Đọc workbook.xml + rels: tên sheet -> đường dẫn XML; kèm đường dẫn styles.xml.
+function xlParts(workbookPath, workbookXml, relsXml){
+  const dir = workbookPath.includes('/') ? workbookPath.slice(0, workbookPath.lastIndexOf('/')) : '';
+  const rels = new Map();
+  let styles = '';
+  for (const m of relsXml.matchAll(/<(?:[\w.-]+:)?Relationship\b([^>]*?)\/?>/g)){
+    const id = xmlAttr(m[1], 'Id'), tg = xmlAttr(m[1], 'Target'), ty = xmlAttr(m[1], 'Type') || '';
+    if (!id || !tg || xmlAttr(m[1], 'TargetMode') === 'External') continue;
+    rels.set(id, relTarget(dir, tg));
+    if (/\/styles$/.test(ty)) styles = relTarget(dir, tg);
+  }
+  const sheets = new Map();
+  for (const m of workbookXml.matchAll(/<(?:[\w.-]+:)?sheet\b([^>]*?)\/?>/g)){
+    const name = xmlAttr(m[1], 'name');
+    const rid = (/\s[\w.-]+:id\s*=\s*["']([^"']*)["']/.exec(m[1]) || [])[1];
+    if (name !== null && rid && rels.has(rid)) sheets.set(name, rels.get(rid));
+  }
+  return { sheets, styles };
+}
+// Thêm kiểu ô có "Wrap text" vào cellXfs của styles.xml. styleFor(s) trả số kiểu mới (giữ mọi định dạng cũ + wrap).
+function wrapStyler(xml){
+  const m = /<((?:[\w.-]+:)?)cellXfs\b([^>]*)>([\s\S]*?)<\/\1cellXfs>/.exec(xml);
+  if (!m) return null;
+  const pfx = m[1];
+  const xfRe = new RegExp(`<${escapeRe(pfx)}xf\\b[^>]*?\\/>|<${escapeRe(pfx)}xf\\b[^>]*>[\\s\\S]*?<\\/${escapeRe(pfx)}xf>`, 'g');
+  const xfs = m[3].match(xfRe) || [];
+  const added = [], map = new Map();
+  const withWrap = xf => {
+    const open = new RegExp(`^<${escapeRe(pfx)}xf\\b([^>]*?)(\\/?)>`).exec(xf);
+    const attrs = setXmlAttr(open[1], 'applyAlignment', '1');
+    if (open[2]) return `<${pfx}xf${attrs}><${pfx}alignment wrapText="1"/></${pfx}xf>`;
+    let body = xf.slice(open[0].length);
+    const alRe = new RegExp(`<${escapeRe(pfx)}alignment\\b([^>]*?)(\\/?)>`);
+    const al = alRe.exec(body);
+    if (al) body = body.replace(alRe, `<${pfx}alignment${setXmlAttr(al[1], 'wrapText', '1')}${al[2]}>`);
+    else body = `<${pfx}alignment wrapText="1"/>` + body;
+    return `<${pfx}xf${attrs}>` + body;
+  };
+  return {
+    styleFor(s){
+      s = +s || 0;
+      if (map.has(s)) return map.get(s);
+      const src = xfs[s] !== undefined ? xfs[s] : xfs[0];
+      let out = s;
+      if (src !== undefined && !/<(?:[\w.-]+:)?alignment\b[^>]*\swrapText\s*=\s*["'](?:1|true)["']/.test(src)){
+        added.push(withWrap(src));
+        out = xfs.length + added.length - 1;
+      }
+      map.set(s, out);
+      return out;
+    },
+    get changed(){ return added.length > 0; },
+    xml(){
+      if (!added.length) return xml;
+      const attrs = setXmlAttr(m[2], 'count', String(xfs.length + added.length));
+      return xml.slice(0, m.index) + `<${pfx}cellXfs${attrs}>${m[3]}${added.join('')}</${pfx}cellXfs>` + xml.slice(m.index + m[0].length);
+    }
+  };
+}
+// Sửa XML một sheet: rows = Map(số dòng -> chiều cao pt), wrapCells = Set("B5"), styleFor = hàm đổi kiểu ô.
+function patchSheetXml(xml, rows, wrapCells, styleFor){
+  const seen = new Set();
+  let auto = 0, pfx = '';
+  xml = xml.replace(/<((?:[\w.-]+:)?)row\b([^>]*?)(\/?)>/g, (all, p, attrs, sc) => {
+    pfx = p;
+    const rv = xmlAttr(attrs, 'r');
+    const r = rv ? +rv : auto + 1;
+    auto = r;
+    if (!rows.has(r)) return all;
+    seen.add(r);
+    attrs = setXmlAttr(setXmlAttr(attrs, 'ht', fmtHt(rows.get(r))), 'customHeight', '1');
+    return `<${p}row${attrs}${sc}>`;
+  });
+  // dòng chưa có thẻ <row> (hiếm): chèn thêm đúng thứ tự
+  const missing = [...rows.keys()].filter(r => !seen.has(r)).sort((a,b) => a-b);
+  for (const r of missing){
+    const tag = `<${pfx}row r="${r}" ht="${fmtHt(rows.get(r))}" customHeight="1"/>`;
+    let pos = -1;
+    for (const m of xml.matchAll(/<(?:[\w.-]+:)?row\b([^>]*?)\/?>/g)){
+      const rv = xmlAttr(m[1], 'r');
+      if (rv && +rv > r){ pos = m.index; break; }
+    }
+    if (pos < 0){
+      const end = /<\/(?:[\w.-]+:)?sheetData>/.exec(xml);
+      if (end) pos = end.index;
+      else {
+        const empty = /<((?:[\w.-]+:)?)sheetData\s*\/>/.exec(xml);
+        if (!empty) continue;
+        xml = xml.slice(0, empty.index) + `<${empty[1]}sheetData>${tag}</${empty[1]}sheetData>` + xml.slice(empty.index + empty[0].length);
+        continue;
+      }
+    }
+    xml = xml.slice(0, pos) + tag + xml.slice(pos);
+  }
+  if (wrapCells && wrapCells.size && styleFor){
+    xml = xml.replace(/<((?:[\w.-]+:)?)c\b([^>]*?)(\/?)>/g, (all, p, attrs, sc) => {
+      const ref = xmlAttr(attrs, 'r');
+      if (!ref || !wrapCells.has(ref.replace(/\$/g,'').toUpperCase())) return all;
+      const s = styleFor(xmlAttr(attrs, 's') || 0);
+      return `<${p}c${setXmlAttr(attrs, 's', String(s))}${sc}>`;
+    });
+  }
+  return xml;
+}
 // </pure>
 
 /* ============================================================
@@ -1219,6 +1349,7 @@ function autoFitRows(o){
       const measure = t => mctx.measureText(t).width;
       const mg = mergeMap.get(key);
       const innerW = (mg ? spanW(mg.c1, mg.c2) : colW[c]) - 3 - (al.indent || 0) * 8;
+      const wrapW = innerW * (o.wrapK || 1);       // file Excel: chừa chút để Excel không xuống dòng nhiều hơn tính toán
       if (innerW <= 0) continue;
 
       let wrap = !!al.wrapText;
@@ -1239,9 +1370,9 @@ function autoFitRows(o){
         const widest = Math.max(...text.split(/\r?\n/).map(measure));
         if (widest > avail + 0.5){ wrap = true; autoWrap.add(key); }
       }
-      const lines = wrap ? wrapLines(measure, text, innerW) : text.split(/\r?\n/);
+      const lines = wrap ? wrapLines(measure, text, wrapW) : text.split(/\r?\n/);
       if (lines.length < 2) continue;              // 1 dòng chữ thì chiều cao Excel đã đủ
-      const need = lines.length * fs * 1.22 + 3;
+      const need = lines.length * fs * (o.lineK || 1.22) + 3;
       if (mg && mg.r2 > mg.r1) mergedNeeds.push({ rg:mg, need });
       else if (need > rowH[r] + 0.5){ rowH[r] = need; changed.add(r); }
     }
@@ -1252,7 +1383,7 @@ function autoFitRows(o){
     for (let r=rg.r1; r<=rg.r2; r++) if (rowH[r]){ cur += rowH[r]; last = r; }
     if (last && need > cur + 0.5){ rowH[last] += need - cur; changed.add(last); }
   }
-  return changed.size;
+  return changed;
 }
 
 function planSheet(ws, opt){
@@ -1312,12 +1443,14 @@ function planSheet(ws, opt){
 
   // tự giãn dòng để chữ không bị cắt (Excel không tự giãn dòng có chiều cao cố định hay ô gộp)
   const autoWrap = new Set();
-  let grown = 0;
+  let fitRows = new Set();
   if (opt && opt.autoFit && opt.mctx){
     const titles0 = parseTitleRows(ps.printTitlesRow);
-    grown = autoFitRows({ ws, area, colW, rowH, mergeMap, slave, autoWrap, mctx:opt.mctx,
-                          extraRows: titles0 ? [titles0.from, titles0.to] : null });
+    fitRows = autoFitRows({ ws, area, colW, rowH, mergeMap, slave, autoWrap, mctx:opt.mctx,
+                            lineK:opt.lineK, wrapK:opt.wrapK,
+                            extraRows: titles0 ? [titles0.from, titles0.to] : null });
   }
+  const grown = fitRows.size;
   const rowY = cumY(rowH);
 
   const W = colX[area.c2+1] - colX[area.c1];
@@ -1370,7 +1503,7 @@ function planSheet(ws, opt){
   }
 
   return { ws, name: ws.name, pw, ph, ml, mr, mt, mb, availW, availH, area, colW, rowH, colX, rowY, s,
-           pages, images, mergeMap, slave, mergeOf, autoWrap, grown,
+           pages, images, mergeMap, slave, mergeOf, autoWrap, grown, fitRows,
            centerH: !!(ps.horizontalCentered), hf: ws.headerFooter || {}, margins: m };
 }
 
@@ -1935,6 +2068,53 @@ async function workbookToPdf(wb, o){
   return { blob: doc.finish(), pages: total, sheets: plans.length, grown };
 }
 
+// Excel -> Excel: chỉ đổi tên và (nếu bật) ghi chiều cao dòng mới + Wrap text thẳng vào XML của file gốc.
+// Không ghi lại bằng ExcelJS nên công thức, ảnh, định dạng, macro... giữ nguyên.
+const XL_MIME = { xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', xlsm:'application/vnd.ms-excel.sheet.macroEnabled.12' };
+async function workbookToExcel(wb, buf, o){
+  const ext = /\.xlsm$/i.test(o.fileName || '') ? 'xlsm' : 'xlsx';
+  const sheets = wb.worksheets.filter(ws => !ws.state || ws.state === 'visible');
+  const plain = () => ({ blob: new Blob([buf], { type: XL_MIME[ext] }), sheets: sheets.length, grown: 0, wrapped: 0 });
+  if (o.autoFit === false) return plain();
+  const mctx = document.createElement('canvas').getContext('2d');
+  const fixes = [];
+  for (const ws of sheets){
+    const plan = planSheet(ws, { autoFit:true, mctx, lineK:XL_LINE_K, wrapK:XL_WRAP_K });
+    if (!plan.fitRows.size && !plan.autoWrap.size) continue;
+    const rows = new Map([...plan.fitRows].map(r => [r, plan.rowH[r]]));
+    const cells = new Set([...plan.autoWrap].map(k => { const [r, c] = k.split(','); return numToCol(+c) + r; }));
+    fixes.push({ name: ws.name, rows, cells });
+  }
+  if (!fixes.length) return plain();
+
+  const zip = await JSZip.loadAsync(buf);
+  const read = p => zip.file(p) ? zip.file(p).async('string') : Promise.resolve(null);
+  const rootRels = await read('_rels/.rels') || '';
+  const offDoc = /<(?:[\w.-]+:)?Relationship\b[^>]*officeDocument"[^>]*>/.exec(rootRels);
+  const wbPath = (offDoc && relTarget('', xmlAttr(offDoc[0], 'Target') || '')) || 'xl/workbook.xml';
+  const slash = wbPath.lastIndexOf('/');
+  const wbRels = (slash >= 0 ? wbPath.slice(0, slash+1) : '') + '_rels/' + wbPath.slice(slash+1) + '.rels';
+  const wbXml = await read(wbPath), relsXml = await read(wbRels);
+  if (!wbXml || !relsXml) throw new Error('Could not read the workbook structure of this file.');
+  const parts = xlParts(wbPath, wbXml, relsXml);
+  const stylesXml = parts.styles ? await read(parts.styles) : null;
+  const styler = stylesXml ? wrapStyler(stylesXml) : null;
+
+  let grown = 0, wrapped = 0;
+  for (const fx of fixes){
+    const path = parts.sheets.get(fx.name);
+    const xml = path ? await read(path) : null;
+    if (!xml) continue;
+    zip.file(path, patchSheetXml(xml, fx.rows, styler ? fx.cells : null, styler && (s => styler.styleFor(s))), { createFolders:false });
+    grown += fx.rows.size;
+    if (styler) wrapped += fx.cells.size;
+  }
+  if (styler && styler.changed) zip.file(parts.styles, styler.xml(), { createFolders:false });
+  if (!grown && !wrapped) return plain();
+  const blob = await zip.generateAsync({ type:'blob', mimeType: XL_MIME[ext], compression:'DEFLATE', compressionOptions:{ level:6 } });
+  return { blob, sheets: sheets.length, grown, wrapped };
+}
+
 /* ============================================================
    3. Nạp thư viện (cdnjs, dự phòng jsDelivr)
    ============================================================ */
@@ -1974,8 +2154,10 @@ function ensureLibs(){
    4. Giao diện
    ============================================================ */
 const $ = id => document.getElementById(id);
-const S = { season:'', stage:'', date:'', files:[], busy:false, autoFit:true };
+const S = { season:'', stage:'', date:'', files:[], busy:false, autoFit:true, mode:'vector' };
+const MODES = ['vector','image','excel'];
 let uid = 0;
+const isExcelOut = () => S.mode === 'excel';
 
 function loadPrefs(){
   try {
@@ -1983,10 +2165,11 @@ function loadPrefs(){
     if (/^[A-Z]{2}\d{2}$/.test(p.season||'')) S.season = p.season;
     if (STAGES.includes(p.stage)) S.stage = p.stage;
     if (p.autoFit === false) S.autoFit = false;
+    if (MODES.includes(p.mode)) S.mode = p.mode;
   } catch(e) {}
 }
 function savePrefs(){
-  try { localStorage.setItem('bom-pdf-prefs', JSON.stringify({ season:S.season, stage:S.stage, autoFit:S.autoFit })); } catch(e) {}
+  try { localStorage.setItem('bom-pdf-prefs', JSON.stringify({ season:S.season, stage:S.stage, autoFit:S.autoFit, mode:S.mode })); } catch(e) {}
 }
 
 function buildSettings(){
@@ -2027,14 +2210,16 @@ function buildSettings(){
 }
 
 function nameFor(f){ return buildPdfName(S.season, S.stage, f.gender, f.model, S.date); }
+function extFor(f){ return isExcelOut() ? (/\.xlsm$/i.test(f.file.name) ? '.xlsm' : '.xlsx') : '.pdf'; }
 
 function uniqueNames(){
   const used = new Map(), out = new Map();
   for (const f of S.files){
-    const base = nameFor(f);
-    const k = used.get(base) || 0;
-    used.set(base, k+1);
-    out.set(f.id, (k ? `${base} (${k+1})` : base) + '.pdf');
+    const base = nameFor(f), ext = extFor(f);
+    const key = (base + ext).toLowerCase();
+    const k = used.get(key) || 0;
+    used.set(key, k+1);
+    out.set(f.id, (k ? `${base} (${k+1})` : base) + ext);
   }
   return out;
 }
@@ -2087,7 +2272,9 @@ function updateButtons(){
   $('clear').disabled = S.busy;
   $('autofit').disabled = S.busy;
   $('mode').disabled = S.busy;
+  $('convert').textContent = isExcelOut() ? 'Create Excel files' : 'Convert to PDF';
   for (const f of S.files){
+    f.dlBtn.textContent = isExcelOut() ? 'Download Excel' : 'Download PDF';
     f.dlBtn.hidden = !f.blob;
     f.dlBtn.disabled = !ok;
     f.dlBtn.title = ok ? '' : 'Choose Season and Stage first';
@@ -2187,13 +2374,26 @@ async function convertAll(){
   if (S.busy) return;
   try { await ensureLibs(); } catch(e){ showError(e.message); return; }
   S.busy = true; updateButtons();
-  const mode = $('mode').value;
+  const mode = S.mode;
   let okCount = 0;
   for (const f of S.files){
     if (f.error || !f.wb) continue;
     if (f.blob){ okCount++; continue; }
     try {
       setState(f, 'Processing…');
+      const plural = (n, w) => `${n} ${w}${n===1?'':'s'}`;
+      if (mode === 'excel'){
+        const res = await workbookToExcel(f.wb, await f.file.arrayBuffer(), { autoFit:S.autoFit, fileName:f.file.name });
+        f.blob = res.blob;
+        const what = [];
+        if (res.grown) what.push(plural(res.grown, 'row') + ' made taller');
+        if (res.wrapped) what.push(plural(res.wrapped, 'cell') + ' set to wrap');
+        const tail = what.length ? what.join(', ') : (S.autoFit ? 'all rows already fit, renamed only' : 'renamed only');
+        setState(f, `Done · ${tail}`, 'ok');
+        okCount++;
+        updateButtons();
+        continue;
+      }
       const res = await workbookToPdf(f.wb, { mode, autoFit:S.autoFit, fileName:f.file.name,
         onProgress: t => setState(f, t) });
       f.blob = res.blob;
@@ -2225,7 +2425,7 @@ async function downloadZip(){
   for (const f of S.files) if (f.blob) zip.file(names.get(f.id), f.blob);
   const out = await zip.generateAsync({ type:'blob' });
   const tag = [S.season, S.stage].filter(Boolean).join(' ');
-  saveBlob(out, `${tag} BOM PDF.zip`);
+  saveBlob(out, `${tag} BOM ${isExcelOut() ? 'Excel' : 'PDF'}.zip`);
 }
 
 /* ============================================================
@@ -2632,7 +2832,8 @@ function init(){
     updateButtons();
   };
   $('autofit').addEventListener('change', e => { S.autoFit = e.target.checked; savePrefs(); resetOutputs(); });
-  $('mode').addEventListener('change', resetOutputs);
+  $('mode').value = S.mode;
+  $('mode').addEventListener('change', e => { S.mode = e.target.value; savePrefs(); resetOutputs(); refreshNames(); });
   $('zip').addEventListener('click', downloadZip);
   $('clear').addEventListener('click', () => {
     if (S.busy) return;
